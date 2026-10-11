@@ -220,3 +220,12 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | W-6 | `await` dentro de `use*` (18 §11 não fala) | `not-implemented` |
 | W-7 | `pending(y)` com `y` que não vem de `await` | deixado como está; em runtime lança `not-compiled` (I-1). Sem ID de diagnóstico em build |
 | W-8 | compiled/05 importa `Boundary` como implementação ilustrativa; omite dev meta em `component(Skeleton)` | allowlist |
+
+## Exemplos (passos 6/7)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| X-7 | TodoMVC prod: **6872 B brotli** (limite 19: 6 KB) — proxy/arrayMethods, list, branches, twoWay | limite provisório 7 KB (19 permite ajuste até o M8); enxugar o runtime |
+| X-8 | Componente com ≥ 2 filhos fora de `<Slot>` + um `<Slot>` → compilador cai com `ReferenceError: Container is falsy` (`place()` em `emit/module.ts`); 10-modal cai nisso | **bug**; contorno com `<div>` em `examples/modal` |
+| X-9 | 10-modal: `ref={input}` sem `onCleanup`, `ref={dialog}` com | verificar |
+| X-10 | Exemplos ajustados: cart/styling `createStore<State>` (T-4), slots cast `SlotFn` (T-5), styling `String(c.v)`/`type` no lugar de `interface extends` | marcados `// [ajuste]` |

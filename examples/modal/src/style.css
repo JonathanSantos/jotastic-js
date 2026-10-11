@@ -1,0 +1,34 @@
+body {
+  font:
+    16px/1.4 system-ui,
+    sans-serif;
+  max-width: 32rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.danger {
+  background: crimson;
+  color: white;
+  border: 0;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+}
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.4);
+  display: grid;
+  place-items: center;
+}
+.modal {
+  background: white;
+  border-radius: 0.5rem;
+  padding: 1rem 1.5rem;
+  min-width: 20rem;
+}
+.modal footer {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}

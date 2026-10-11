@@ -1,0 +1,47 @@
+body {
+  font:
+    16px/1.4 system-ui,
+    sans-serif;
+  max-width: 32rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.todoapp input:not([type]) {
+  width: 100%;
+  font: inherit;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+ul {
+  list-style: none;
+  padding: 0;
+}
+li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+li span {
+  flex: 1;
+}
+li.done span {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+li button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+footer {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+nav button.active {
+  font-weight: bold;
+}
+.empty {
+  color: #888;
+}
