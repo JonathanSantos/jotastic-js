@@ -157,3 +157,17 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | E-3 | `recommended` impõe `@typescript-eslint/parser` (dep direta) | assim |
 | E-4 | Hints viram `'warn'` (aparecem também na CLI/CI) | assim |
 | E-5 | URL de docs das regras aponta para repositório hipotético `jotastic/jotastic` | trocar quando houver repo |
+
+## Compilador, parte 1 (passo 5)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| K-1 | compiled/01 × 18 §13–14: (a) sem `data-jo` (18 §14 manda emitir em dev); (b) `createRoot(document.querySelector('#app'), …)` vs `mount(thunk, '#app')`; (c) importa `untrack`/`createRoot` sem usar; (d) loc `Counter.tsx:27:7`, o `mount` está na linha 26 | compilador segue 18; allowlist explícita no snapshot |
+| K-2 | 18 §4: `onMount`/`onCleanup`/`untrack`/`tick`/`raw` "mapeados para os do runtime" × §14 "continuam importados de `jotastic`" | segue §14 |
+| K-3 | M-1 (select) | `prop(select, 'value')` emitido depois dos bindings dos filhos |
+| K-4 | 18 §7: `{a ? X : Y}` → `branches` sempre, mas compiled/02 usa `insert` num ternário de strings | fluxo só quando X/Y têm JSX |
+| K-5 | Prop de componente com identificador `let` comum (ex.: `let` de `ref`) vira valor capturado na criação (§6) | assim; getter seria mais correto |
+| K-6 | `textContent`/`innerHTML`/`indeterminate` literais → `prop(el, n, () => lit)`; `defaultValue`/`defaultChecked` literais → atributos `value`/`checked`; `const { a } = derivado` → `_a = memo(…)`, lido `_a.get().a` | assim |
+| K-7 | `external` em dev: completa args ausentes com `undefined` para `dev` ficar na 4ª posição | assim |
+| K-8 | Nome de helper colidindo com variável do usuário | `rest as _rest2` |
+| K-9 | Modo plugin Babel gera aspas duplas; `compile()` gera simples | assim |
