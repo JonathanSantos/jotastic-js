@@ -1,0 +1,29 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "jotastic",
+    "paths": {
+      "jotastic": ["./jotastic.d.ts"],
+      "jotastic/jsx-runtime": ["../../src/jsx-runtime.d.ts"],
+      "jotastic/store": ["./store.d.ts"],
+      "jotastic/fetch": ["./fetch.d.ts"]
+    }
+  },
+  "files": [
+    "./ambient.d.ts",
+    "./jsx-checks.tsx",
+    "../../../../docs/spec/examples/01-counter.tsx",
+    "../../../../docs/spec/examples/02-todos.tsx",
+    "../../../../docs/spec/examples/03-form.tsx",
+    "./patched/05-styling.tsx",
+    "./patched/06-async.tsx",
+    "../../../../docs/spec/examples/07-use-functions.ts",
+    "./patched/08-store.ts",
+    "./patched/08-store-usage.tsx",
+    "../../../../docs/spec/examples/09-external.tsx",
+    "./patched/10-modal.tsx",
+    "./patched/13-slots.tsx",
+    "../../../../docs/spec/examples/14-use-form.ts"
+  ]
+}
