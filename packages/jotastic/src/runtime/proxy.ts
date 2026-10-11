@@ -90,8 +90,11 @@ function notifyRange(m: Map<PropertyKey, Signal<number>>, from: number, to: numb
 function toRaw<T>(v: T): T {
   if (typeof v !== 'object' || v === null) return v
   let x: object = v
-  const ro = roTargets.get(x)
-  if (ro) x = ro
+  // Readonly só existe em dev.
+  if (DEV) {
+    const ro = roTargets.get(x)
+    if (ro) x = ro
+  }
   return (targets.get(x) ?? x) as T
 }
 

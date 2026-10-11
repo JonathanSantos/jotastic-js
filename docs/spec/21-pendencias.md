@@ -248,9 +248,10 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 
 | # | Caso concreto | Provisório |
 |---|---|---|
-| G-1 | Swap rows: `list()` sem LIS move ~997 `<tr>` (Solid move 2) | LIS (previsto "pós-MVP" no contrato) |
-| G-2 | Select: um efeito `classList` por linha → 1000 efeitos por seleção; Solid usa `createSelector` | sem equivalente no contrato; decidir se entra API/otimização de compilador |
-| G-3 | Clear/replace: remoção nó a nó; Solid usa `textContent = ''` quando a lista esvazia e é o único conteúdo | fast path |
+| G-1 | Swap rows: `list()` sem LIS move ~997 `<tr>` (Solid move 2) | **feito**: LIS; swap 9,1× → 1,0× (+133 B) |
+| G-2 | Select: um efeito `classList` por linha → 1000 efeitos por seleção; Solid usa `createSelector` | proposta: compilador detecta `X === <valor do item>` dentro de item de lista e emite helper interno `selector(() => X)` (Map valor → observadores; ~150–250 B). Exige entrada em `runtime.d.ts`: decisão de contrato |
+| G-3 | Clear/replace: remoção nó a nó; Solid usa `textContent = ''` quando a lista esvazia e é o único conteúdo | **feito**: `textContent = ''` com `marker === null`; clear 1,51× → 1,22×, replace 1,33× → 1,18× |
 | G-4 | Append: `push` via proxy + `Array.from` + passe completo de chaves | otimizar |
 | G-5 | **D29 (delegação)**: sem listeners por linha, create 10k melhora ~7% (< 10%); `add/removeEventListener` = 1,6% do profile | **delegação não se justifica** |
 | G-6 | Ruído: Solid create 10k varia 8% entre execuções (~ o limiar) | limiar instável em CI; mais runs ou margem em ms |
+| G-7 | Após otimização (LIS, clear em lote, `index` lazy, `classList` sem alocação): create 1k 1.11×, replace 1.18×, update 1.04×, select 3.57×, swap 1.00×, remove 1.05×, create 10k 1.07×, append 1.21×, clear 1.22×. TodoMVC 7074 B (+216 B) | restante é custo estrutural por linha (3 efeitos, 2 listeners, proxy por item) |

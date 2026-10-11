@@ -244,21 +244,32 @@ function normalizeClass(v: unknown, out: Set<string>): void {
 }
 
 function classApplier(el: Element): Applier {
-  // Classes do template ficam intactas: nunca são removidas por um diff.
-  const fixed = new Set(Array.from(el.classList))
-  let prev = new Set<string>()
+  // Classes do template ficam intactas: nunca são removidas por um diff. O Set só é montado na primeira remoção.
+  const initial = el.getAttribute('class')
+  let fixed: Set<string> | null = null
+  let prev: Set<string> | null = null
   return (v) => {
+    // Nada antes e nada agora (caso comum na criação): sem alocar.
+    if (!v && prev === null) return
     const next = new Set<string>()
     normalizeClass(v, next)
     let changed = false
-    for (const c of prev) {
-      if (!next.has(c) && !fixed.has(c)) {
-        el.classList.remove(c)
-        changed = true
+    if (prev !== null) {
+      for (const c of prev) {
+        if (!next.has(c)) {
+          if (fixed === null) {
+            fixed = new Set()
+            if (initial) addClasses(initial, fixed)
+          }
+          if (!fixed.has(c)) {
+            el.classList.remove(c)
+            changed = true
+          }
+        }
       }
     }
     for (const c of next) {
-      if (!prev.has(c) && !el.classList.contains(c)) {
+      if ((prev === null || !prev.has(c)) && !el.classList.contains(c)) {
         el.classList.add(c)
         changed = true
       }

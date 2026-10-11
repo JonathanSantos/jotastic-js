@@ -112,7 +112,9 @@ interface Row<T> {
   /** Chave = índice (primitivo sem `key`): valor diferente na posição recria a linha. */
   byIndex: boolean
   owner: Owner
-  index: Signal<number>
+  /** Posição atual. O signal de `index()` só nasce na primeira leitura (render que não usa o índice não paga). */
+  i: number
+  index: Signal<number> | null
   /** Nós de um conteúdo estático. */
   nodes: Node[]
   /** Conteúdo dinâmico (accessor): intervalo antes de `end`. */
@@ -126,6 +128,11 @@ function rowNodes(row: Row<unknown>): Node[] {
   return row.slot ? [...row.slot.current, row.end] : [row.end]
 }
 
+function setIndex(row: Row<unknown>, i: number): void {
+  row.i = i
+  row.index?.set(i)
+}
+
 function isObject(v: unknown): v is Record<PropertyKey, unknown> {
   return (typeof v === 'object' && v !== null) || typeof v === 'function'
 }
@@ -135,9 +142,33 @@ function keyLabel(k: unknown): string {
 }
 
 /**
+ * `s[j]` = posição antiga da linha que vai para j (-1 = nova). Marca com -2 as posições de uma subsequência crescente
+ * máxima (LIS): essas linhas ficam paradas, as outras são movidas. Empate: a que começa mais cedo (percorre da direita).
+ */
+function stablePositions(s: number[]): void {
+  const tails: number[] = []
+  const prev: number[] = []
+  for (let i = s.length; i--;) {
+    const x = s[i]!
+    if (x < 0) continue
+    let lo = 0
+    let hi = tails.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (s[tails[mid]!]! > x) lo = mid + 1
+      else hi = mid
+    }
+    prev[i] = tails[lo - 1]! // undefined encerra a cadeia abaixo
+    tails[lo] = i
+  }
+  for (let i = tails.at(-1)!; i >= 0; i = prev[i]!) s[i] = -2
+}
+
+/**
  * Lista com chave sobre nós reais. `source()` é lido (e copiado) num efeito de render: assina só a estrutura do array.
  * Chave padrão: objeto → `item.id ?? item.key ?? item`; primitivo → índice. Reconciliação: prefixo/sufixo comum +
- * `Map<key, row>`; novos criados, ausentes descartados, existentes movidos (`insertBefore`, mesma referência).
+ * `Map<key, posição>`; novos criados, ausentes descartados, existentes movidos (`insertBefore`, mesma referência) só
+ * se fora da maior subsequência crescente (LIS). Lista esvaziada que é todo o conteúdo do parent: `textContent = ''`.
  */
 export function list<T>(
   parent: Node,
@@ -154,9 +185,21 @@ export function list<T>(
 
   const createRow = (item: T, k: unknown, i: number, byIndex: boolean): Row<T> => {
     const owner = createOwner('item', listOwner)
-    const index = runWithOwner(owner, () => signal(i))
-    const value = renderIn(owner, () => render(item, () => index.get()))
-    const row: Row<T> = { key: k, item, byIndex, owner, index, nodes: [], end: null, slot: null, pending: null }
+    const row: Row<T> = {
+      key: k,
+      item,
+      byIndex,
+      owner,
+      i,
+      index: null,
+      nodes: [],
+      end: null,
+      slot: null,
+      pending: null,
+    }
+    const value = renderIn(owner, () =>
+      render(item, () => (row.index ??= DEV ? runWithOwner(owner, () => signal(row.i)) : signal(row.i)).get()),
+    )
     if (hasFunction(value)) {
       row.end = document.createComment('')
       row.pending = value
@@ -222,38 +265,43 @@ export function list<T>(
 
     // Prefixo e sufixo comuns.
     while (start <= oldEnd && start <= newEnd && fits(old[start]!, start)) {
-      const r = old[start]!
-      r.item = items[start]!
-      next[start++] = r
+      next[start] = old[start++]!
       reused++
     }
     while (start <= oldEnd && start <= newEnd && fits(old[oldEnd]!, newEnd)) {
       const r = old[oldEnd--]!
-      r.item = items[newEnd]!
-      r.index.set(newEnd)
+      setIndex(r as Row<unknown>, newEnd)
       next[newEnd--] = r
       reused++
     }
 
-    // Meio: Map<key, row>.
-    const map = new Map<unknown, Row<T>>()
-    for (let i = start; i <= oldEnd; i++) map.set(old[i]!.key, old[i]!)
+    // Meio: Map<key, posição antiga>; `from[j - start]` = de onde veio a linha (-1 = nova).
+    const map = new Map<unknown, number>()
+    const from: number[] = []
+    if (n || marker) for (let i = start; i <= oldEnd; i++) map.set(old[i]!.key, i)
     for (let j = start; j <= newEnd; j++) {
-      const r = map.get(keys[j])
-      if (r && fits(r, j)) {
+      const i = map.get(keys[j])
+      const r = i === undefined ? undefined : old[i]!
+      const keep = r && fits(r, j)
+      from.push(keep ? i! : -1)
+      if (keep) {
         map.delete(keys[j])
-        r.item = items[j]!
-        r.index.set(j)
+        setIndex(r as Row<unknown>, j)
         next[j] = r
         reused++
-      } else {
-        next[j] = createRow(items[j]!, keys[j], j, byIndex[j]!)
-      }
+      } else next[j] = createRow(items[j]!, keys[j], j, byIndex[j]!)
     }
-    for (const r of map.values()) removeRow(r)
+    if (marker === null && old.length && !reused) {
+      // Todas as linhas saem e a lista é todo o conteúdo de `parent` (marker null, 17 §Convenções): de uma vez.
+      for (const r of old) {
+        dispose(r.owner)
+        if (DEV) for (const node of rowNodes(r as Row<unknown>)) emitDomWrite(node, 'remove')
+      }
+      parent.textContent = ''
+    } else for (const i of map.values()) removeRow(old[i]!)
     rows = next
 
-    // Posiciona o intervalo alterado de trás para frente; nó já no lugar não é tocado.
+    // Posiciona o intervalo alterado de trás para frente; linhas da LIS e nós já no lugar não são tocados.
     let ref: Node | null = marker
     for (let j = newEnd + 1; j < n; j++) {
       const ns = rowNodes(next[j]! as Row<unknown>)
@@ -262,17 +310,20 @@ export function list<T>(
         break
       }
     }
+    stablePositions(from)
     for (let j = newEnd; j >= start; j--) {
       const ns = rowNodes(next[j]! as Row<unknown>)
-      for (let k = ns.length - 1; k >= 0; k--) {
-        const node = ns[k]!
-        if (node.parentNode !== parent || node.nextSibling !== ref) {
-          const moved = node.parentNode === parent
-          parent.insertBefore(node, ref)
-          emitDomWrite(node, moved ? 'move' : 'insert')
+      if (from[j - start] === -2) ref = ns[0] ?? ref
+      else
+        for (let k = ns.length - 1; k >= 0; k--) {
+          const node = ns[k]!
+          if (node.parentNode !== parent || node.nextSibling !== ref) {
+            const moved = node.parentNode === parent
+            parent.insertBefore(node, ref)
+            emitDomWrite(node, moved ? 'move' : 'insert')
+          }
+          ref = node
         }
-        ref = node
-      }
     }
 
     // Conteúdo dinâmico das linhas novas: agora que o marcador está no lugar.

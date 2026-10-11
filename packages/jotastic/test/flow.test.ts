@@ -609,3 +609,277 @@ describe('fluxo (F1–F16)', () => {
     expect(cleaned).toBe(true)
   })
 })
+
+describe('list: reconciliação mínima (LIS) e fast paths', () => {
+  /** Lista de `{ id }` renderizada em `<ul>` (marker null); devolve o estado, o `ul` e o log de cleanups. */
+  function mountIds(ids: number[], opts: { index?: boolean } = {}) {
+    const items = state(ids.map((id) => ({ id })))
+    const ul = document.createElement('ul')
+    const cleaned: number[] = []
+    const root = inRoot((root) => {
+      list(
+        ul,
+        null,
+        () => items.get(),
+        (item, index) => {
+          onCleanup(() => cleaned.push(item.id))
+          const el = li()
+          if (opts.index) insert(el, () => `${item.id}:${index()}`, null)
+          else el.textContent = String(item.id)
+          return el
+        },
+      )
+      return root
+    })
+    return { items, ul, cleaned, root }
+  }
+
+  const order = (ul: Element) => Array.from(ul.childNodes, (n) => n.textContent)
+  const added = (recs: MutationRecord[]) =>
+    recs.filter((r) => r.type === 'childList').flatMap((r) => Array.from(r.addedNodes))
+  /** Registra as escritas em `el.textContent` (fast path de clear). */
+  function spyTextContent(el: Node): string[] {
+    const writes: string[] = []
+    let proto = Object.getPrototypeOf(el)
+    while (!Object.getOwnPropertyDescriptor(proto, 'textContent')) proto = Object.getPrototypeOf(proto)
+    const desc = Object.getOwnPropertyDescriptor(proto, 'textContent')!
+    Object.defineProperty(el, 'textContent', {
+      configurable: true,
+      get: () => desc.get!.call(el),
+      set: (v: string) => {
+        writes.push(v)
+        desc.set!.call(el, v)
+      },
+    })
+    return writes
+  }
+
+  test('swap de 2 linhas move exatamente 2 nós (mesmas referências)', () => {
+    const ids = Array.from({ length: 20 }, (_, i) => i)
+    const { items, ul } = mountIds(ids)
+    const before = Array.from(ul.childNodes)
+    const records = observe(ul)
+    const arr = items.get()
+    const a = arr[1]!
+    arr[1] = arr[18]!
+    arr[18] = a
+    flush()
+    const recs = records()
+    expect(added(recs)).toHaveLength(2)
+    expect(new Set(added(recs))).toEqual(new Set([before[1], before[18]]))
+    const expected = [...before]
+    ;[expected[1], expected[18]] = [expected[18]!, expected[1]!]
+    expect(Array.from(ul.childNodes)).toEqual(expected)
+  })
+
+  test('swap atualiza index() só das linhas trocadas', () => {
+    const { items, ul } = mountIds([0, 1, 2, 3, 4, 5], { index: true })
+    const arr = items.get()
+    const a = arr[1]!
+    arr[1] = arr[4]!
+    arr[4] = a
+    flush()
+    expect(order(ul)).toEqual(['0:0', '4:1', '2:2', '3:3', '1:4', '5:5'])
+  })
+
+  test('reverse: n - 1 nós movidos, nenhum criado nem removido', () => {
+    const ids = Array.from({ length: 10 }, (_, i) => i)
+    const { items, ul, cleaned } = mountIds(ids, { index: true })
+    const before = Array.from(ul.childNodes)
+    const records = observe(ul)
+    items.get().reverse()
+    flush()
+    const recs = records()
+    expect(added(recs)).toHaveLength(9)
+    expect(Array.from(ul.childNodes)).toEqual([...before].reverse())
+    expect(order(ul)).toEqual(ids.map((id, i) => `${9 - id}:${i}`))
+    expect(cleaned).toEqual([])
+  })
+
+  test('rotação: último → primeiro e primeiro → último movem 1 nó cada', () => {
+    const ids = Array.from({ length: 8 }, (_, i) => i)
+    const { items, ul } = mountIds(ids)
+    const records = observe(ul)
+    const last = items.get().pop()!
+    items.get().unshift(last)
+    flush()
+    expect(added(records())).toHaveLength(1)
+    expect(order(ul)).toEqual(['7', '0', '1', '2', '3', '4', '5', '6'])
+    const first = items.get().shift()!
+    items.get().push(first)
+    flush()
+    expect(added(records())).toHaveLength(1)
+    expect(order(ul)).toEqual(ids.map(String))
+  })
+
+  test('embaralhar com inserções e remoções: DOM final correto, nós mantidos reaproveitados', () => {
+    const { items, ul, cleaned } = mountIds([1, 2, 3, 4, 5, 6, 7, 8])
+    const nodeOf = new Map(Array.from(ul.childNodes, (n) => [n.textContent, n]))
+    items.set([8, 3, 10, 1, 6, 11, 2].map((id) => ({ id })))
+    flush()
+    expect(order(ul)).toEqual(['8', '3', '10', '1', '6', '11', '2'])
+    for (const k of ['8', '3', '1', '6', '2']) expect(Array.from(ul.childNodes)).toContain(nodeOf.get(k))
+    expect(cleaned.sort()).toEqual([4, 5, 7])
+  })
+
+  test('aleatório (semente fixa): ordem, identidade dos nós mantidos e index() corretos', () => {
+    let seed = 42
+    const rand = (n: number) => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n
+    let nextId = 0
+    const { items, ul, cleaned } = mountIds(
+      Array.from({ length: 12 }, () => nextId++),
+      { index: true },
+    )
+    for (let round = 0; round < 200; round++) {
+      const nodeOf = new Map(Array.from(ul.childNodes, (n) => [n.textContent!.split(':')[0], n]))
+      const ids = items.get().map((x) => x.id)
+      const next = ids.filter(() => rand(5) !== 0)
+      for (let i = next.length - 1; i > 0; i--) {
+        if (rand(3) === 0) {
+          const j = rand(i + 1)
+          ;[next[i], next[j]] = [next[j]!, next[i]!]
+        }
+      }
+      for (let k = rand(4); k > 0; k--) next.splice(rand(next.length + 1), 0, nextId++)
+      cleaned.length = 0
+      items.set(next.map((id) => ({ id })))
+      flush()
+      expect(order(ul)).toEqual(next.map((id, i) => `${id}:${i}`))
+      for (const id of next)
+        if (nodeOf.has(String(id))) expect(ul.childNodes[next.indexOf(id)]).toBe(nodeOf.get(String(id)))
+      expect(cleaned.sort((a, b) => a - b)).toEqual(ids.filter((id) => !next.includes(id)).sort((a, b) => a - b))
+    }
+  })
+
+  test('clear com a lista como único conteúdo: textContent, owners descartados, cleanups rodam', () => {
+    const sel = signal(0)
+    const items = state([{ id: 1 }, { id: 2 }, { id: 3 }])
+    const ul = document.createElement('ul')
+    const cleaned: number[] = []
+    inRoot(() =>
+      list(
+        ul,
+        null,
+        () => items.get(),
+        (item) => {
+          onCleanup(() => cleaned.push(item.id))
+          const el = li()
+          effect(() => void el.classList.toggle('on', sel.get() === item.id), { kind: 'render' })
+          return el
+        },
+      ),
+    )
+    expect(observerCount(sel)).toBe(3)
+    const cleared = spyTextContent(ul)
+    items.set([])
+    flush()
+    expect(cleared).toEqual([''])
+    expect(ul.childNodes).toHaveLength(0)
+    expect(cleaned).toEqual([1, 2, 3])
+    expect(observerCount(sel)).toBe(0)
+    // a lista continua funcionando depois do clear
+    items.set([{ id: 4 }])
+    flush()
+    expect(ul.textContent).toBe('')
+    expect(ul.childNodes).toHaveLength(1)
+    expect(observerCount(sel)).toBe(1)
+  })
+
+  test('replace (todas as chaves novas): remoção em lote, cleanups rodam, nós novos no lugar', () => {
+    const { items, ul, cleaned } = mountIds([1, 2, 3])
+    const old = Array.from(ul.childNodes)
+    const cleared = spyTextContent(ul)
+    items.set([{ id: 4 }, { id: 5 }])
+    flush()
+    expect(cleared).toEqual([''])
+    expect(cleaned).toEqual([1, 2, 3])
+    expect(order(ul)).toEqual(['4', '5'])
+    for (const n of old) expect(n.parentNode).toBeNull()
+  })
+
+  test('clear com outro conteúdo no parent (marker): remove só as linhas', () => {
+    const items = state([{ id: 1 }, { id: 2 }])
+    const ul = document.createElement('ul')
+    const head = ul.appendChild(document.createElement('li'))
+    head.textContent = 'head'
+    const marker = ul.appendChild(document.createComment(''))
+    const tail = ul.appendChild(document.createElement('li'))
+    tail.textContent = 'tail'
+    const cleaned: number[] = []
+    inRoot(() =>
+      list(
+        ul,
+        marker,
+        () => items.get(),
+        (item) => {
+          onCleanup(() => cleaned.push(item.id))
+          const el = li()
+          el.textContent = String(item.id)
+          return el
+        },
+      ),
+    )
+    expect(ul.textContent).toBe('head12tail')
+    const cleared = spyTextContent(ul)
+    items.set([])
+    flush()
+    expect(Array.from(ul.childNodes)).toEqual([head, marker, tail])
+    expect(cleared).toEqual([])
+    expect(cleaned).toEqual([1, 2])
+  })
+
+  test('chaves duplicadas: aviso, sufixo estável e linhas preservadas ao reordenar', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const a = { id: 1, t: 'a' }
+    const b = { id: 1, t: 'b' }
+    const c = { id: 2, t: 'c' }
+    const items = signal([a, b, c])
+    const ul = document.createElement('ul')
+    let renders = 0
+    inRoot(() =>
+      list(
+        ul,
+        null,
+        () => items.get(),
+        (item) => {
+          renders++
+          const el = li()
+          el.textContent = item.t
+          return el
+        },
+      ),
+    )
+    expect(ul.textContent).toBe('abc')
+    expect(warn).toHaveBeenCalled()
+    const [na, nb, nc] = Array.from(ul.childNodes)
+    items.set([c, a, b])
+    flush()
+    expect(renders).toBe(3)
+    // 1ª ocorrência de id 1 continua sendo o nó de `a`, a 2ª o de `b` (chave sintética estável)
+    expect(Array.from(ul.childNodes)).toEqual([nc, na, nb])
+  })
+
+  test('index() lido sem rastrear não cria signal; lido num binding acompanha moves', () => {
+    const items = state([{ id: 'a' }, { id: 'b' }, { id: 'c' }])
+    const ul = document.createElement('ul')
+    const atSetup: number[] = []
+    inRoot(() =>
+      list(
+        ul,
+        null,
+        () => items.get(),
+        (item, index) => {
+          atSetup.push(index())
+          const el = li()
+          if (item.id === 'c') insert(el, () => index(), null)
+          return el
+        },
+      ),
+    )
+    expect(atSetup).toEqual([0, 1, 2])
+    expect(ul.textContent).toBe('2')
+    items.get().shift()
+    flush()
+    expect(ul.textContent).toBe('1')
+  })
+})
