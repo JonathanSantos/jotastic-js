@@ -78,13 +78,10 @@ export function DeleteAccount() {
       </button>
 
       <Modal open={confirmOpen} onOpenChange={(v) => (confirmOpen = v)} title="Tem certeza?">
-        {/* [contorno: o compilador quebra ("Container is falsy") com 2+ filhos fora de <Slot> junto de um <Slot>; embrulhados num <div>] */}
-        <div>
-          <p>
-            Digite <code>excluir</code> para confirmar.
-          </p>
-          <input ref={input} value={typed} />
-        </div>
+        <p>
+          Digite <code>excluir</code> para confirmar.
+        </p>
+        <input ref={input} value={typed} />
 
         <Slot name="actions">
           <button disabled={typed !== 'excluir'} onClick={confirmDelete}>

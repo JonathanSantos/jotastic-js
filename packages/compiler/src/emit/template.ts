@@ -10,7 +10,7 @@ import * as t from '@babel/types'
 import type { NodePath } from '@babel/traverse'
 import { gid, type BodyContext } from '../context'
 import { autofocusBinding, elementAttribute, elementSpread, escapeAttr, type AttrResult } from './bindings'
-import { compileComponent } from './components'
+import { compileComponent, isInComponentChildren } from './components'
 import { childValue, isInFlow, isListChild, listStatement } from './flow'
 import { arrow, attrName, isIntrinsic, jsxName } from './util'
 
@@ -94,6 +94,7 @@ export function childrenOf(path: NodePath<t.JSXElement | t.JSXFragment>, ctx: Bo
 export function compileJSX(path: NodePath<t.JSXElement | t.JSXFragment>, ctx: BodyContext): Compiled {
   // dentro de branch/item/continuação: `ref` ganha `onCleanup`, `autofocus` ganha `autofocus(el)` (18 §5.3, §5.6)
   ctx.inFlow = isInFlow(path, ctx)
+  ctx.inChildren = isInComponentChildren(path, ctx)
   if (path.isJSXFragment()) return { stmts: [], expr: compileFragment(path, ctx) }
   const el = path as NodePath<t.JSXElement>
   if (!isIntrinsic(el.node.openingElement.name)) return { stmts: [], expr: compileComponent(el, ctx) }
@@ -365,11 +366,13 @@ function isBoundary(cur: NodePath, child: NodePath): boolean {
 /**
  * Troca o JSX em `path` por `c.expr` e coloca `c.stmts` antes do statement âncora (ou no corpo de uma arrow de
  * expressão, que vira bloco). Em posição condicional, usa expressão de sequência com `let` declarado no escopo.
+ * Devolve `true` quando o corpo de uma arrow virou bloco: os paths irmãos ainda na fila da travessia ficam velhos
+ * (o path do corpo passa a apontar para o bloco) e quem chama precisa recomeçar a travessia (X-8).
  */
-export function place(path: NodePath, c: Compiled): void {
+export function place(path: NodePath, c: Compiled): boolean {
   if (!c.stmts.length) {
     path.replaceWith(c.expr)
-    return
+    return false
   }
   let child: NodePath = path
   let cur: NodePath | null = path.parentPath
@@ -378,13 +381,13 @@ export function place(path: NodePath, c: Compiled): void {
       path.replaceWith(c.expr)
       const body = cur.node.body as t.Expression
       cur.get('body').replaceWith(t.blockStatement([...c.stmts, t.returnStatement(body)]))
-      return
+      return true
     }
     if (isBoundary(cur, child)) break
     if (cur.isStatement() && !cur.isBlockStatement()) {
       cur.insertBefore(c.stmts)
       path.replaceWith(c.expr)
-      return
+      return false
     }
     child = cur
     cur = cur.parentPath
@@ -401,6 +404,7 @@ export function place(path: NodePath, c: Compiled): void {
     } else if (t.isExpressionStatement(s)) exprs.push(s.expression)
   }
   path.replaceWith(t.sequenceExpression([...exprs, c.expr]))
+  return false
 }
 
 /** Thunk para JSX fora de corpo reativo (18 §13). */

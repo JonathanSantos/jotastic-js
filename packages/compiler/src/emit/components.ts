@@ -193,8 +193,26 @@ function slotsEntry(children: Child[], ctx: BodyContext): t.ObjectProperty {
   return t.objectProperty(t.identifier('children'), t.objectExpression(props))
 }
 
+/** Propriedades `children` geradas para componentes: o JSX dentro delas é renderizado por quem recebe (X-9). */
+const childrenProps = new WeakSet<t.Node>()
+
+/** O JSX em `path` está dentro de `children`/slot de um componente (antes de chegar ao corpo reativo)? */
+export function isInComponentChildren(path: NodePath, ctx: BodyContext): boolean {
+  const stop = ctx.fn?.node
+  for (let p: NodePath | null = path.parentPath; p && p.node !== stop; p = p.parentPath) {
+    if (childrenProps.has(p.node)) return true
+  }
+  return false
+}
+
 /** `children` do componente (18 §6): um filho → getter/valor; vários → getter com array. */
 function childrenEntry(path: NodePath<t.JSXElement>, ctx: BodyContext): t.ObjectProperty | t.ObjectMethod | null {
+  const entry = childrenEntryOf(path, ctx)
+  if (entry) childrenProps.add(entry)
+  return entry
+}
+
+function childrenEntryOf(path: NodePath<t.JSXElement>, ctx: BodyContext): t.ObjectProperty | t.ObjectMethod | null {
   const children = childrenOf(path, ctx)
   if (children.length === 0) return null
   // slots (18 §12): `{ [SLOTS]: true, default, … }`

@@ -1,0 +1,23 @@
+{
+  "name": "example-async",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deps": "npm run build -w jotastic -w @jotastic/analyzer -w @jotastic/compiler -w @jotastic/vite -w @jotastic/test",
+    "predev": "npm run deps",
+    "dev": "vite",
+    "prebuild": "npm run deps",
+    "build": "vite build",
+    "size": "npm run build && node ../../scripts/size.mjs dist 9216 async",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "jotastic": "0.0.0"
+  },
+  "devDependencies": {
+    "@jotastic/test": "0.0.0",
+    "@jotastic/vite": "0.0.0",
+    "vite": "^5.4.0"
+  }
+}

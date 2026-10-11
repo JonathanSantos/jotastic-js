@@ -36,6 +36,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "examples/slots", "--", "--port", "5178", "--strictPort"],
       "port": 5178
+    },
+    {
+      "name": "async",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "examples/async", "--", "--port", "5179", "--strictPort"],
+      "port": 5179
     }
   ]
 }

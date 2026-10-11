@@ -130,3 +130,58 @@ test('render prop lê estado do pai, ternário entre dois <Slot> com o mesmo nom
   await tick()
   expect(container.querySelector('em')!.textContent).toBe('muitos')
 })
+
+// X-8: 2+ filhos fora de <Slot> junto de um <Slot> (10-modal); X-9: `ref` em children de componente é limpo quando
+// quem recebe descarta os nós (early return).
+const modalSource = `
+import { Slot, useSlots } from 'jotastic'
+
+export function Box({ open, children }: { open: boolean; children: JSX.Element }) {
+  const s = useSlots<'actions'>(children)
+  if (!open) return null
+  return (
+    <section>
+      <div class="body">{s.default}</div>
+      <footer>{s.actions}</footer>
+    </section>
+  )
+}
+
+export function Page({ open, probe }: { open: boolean; probe: (get: () => unknown) => void }) {
+  let input: HTMLInputElement | undefined
+  probe(() => input)
+  return (
+    <Box open={open}>
+      <p>Digite <code>ok</code></p>
+      <input ref={input} />
+      <Slot name="actions"><button>Confirmar</button></Slot>
+    </Box>
+  )
+}
+`
+
+test('X-8/X-9: default com vários filhos + <Slot>; ref de children vira undefined quando o componente descarta', async () => {
+  const m = await load<Record<string, Comp>>(modalSource, 'BoxPage.tsx')
+  const open = signal(true)
+  let getRef: () => unknown = () => null
+  const { container } = render(() =>
+    component(m.Page!, {
+      get open() {
+        return open.get()
+      },
+      probe: (g: () => unknown) => (getRef = g),
+    }),
+  )
+  expect(container.querySelector('.body')!.innerHTML).toBe('<p>Digite <code>ok</code></p><input>')
+  expect(container.querySelector('footer')!.innerHTML).toBe('<button>Confirmar</button>')
+  expect(getRef()).toBe(container.querySelector('input'))
+
+  open.set(false)
+  await tick()
+  expect(container.querySelector('section')).toBeNull()
+  expect(getRef()).toBeUndefined()
+
+  open.set(true)
+  await tick()
+  expect(getRef()).toBe(container.querySelector('input'))
+})
