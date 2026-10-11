@@ -199,5 +199,37 @@ export function createStore<S extends object>(
       true,
     ),
   )
+  if (DEV) hmrState.set(view, state)
   return view as unknown as Store<S>
+}
+
+// ─── HMR (dev) ───────────────────────────────────────────────────────────────
+
+/** Store (view) → estado reativo; só em dev, para o hot swap copiar o estado do store antigo para o novo. */
+const hmrState = new WeakMap<object, Dict>()
+
+/**
+ * Interno (dev, HMR): chamado pelo rodapé que `@jotastic/vite` anexa a módulos com `export const x = createStore(…)`.
+ * `data` = `import.meta.hot.data` (sobrevive à reexecução do módulo). Na reexecução, copia para cada store novo as
+ * chaves de estado (não getters/ações) que ainda existem nele, do store antigo de mesmo nome; depois guarda os novos.
+ * `reset` (`// @refresh reset`): não copia. O módulo não se auto-aceita: a atualização sobe até os componentes que o
+ * importam, que reexecutam com o store novo (senão importadores ficariam com o antigo).
+ */
+export function __hmrStores(data: Record<string, unknown>, stores: Record<string, unknown>, reset = false): void {
+  if (!DEV || !data) return
+  const prev = data.jotasticStores as Record<string, unknown> | undefined
+  if (prev && !reset) {
+    const kept: string[] = []
+    for (const [name, store] of Object.entries(stores)) {
+      const from: Dict | undefined = prev[name] ? hmrState.get(prev[name] as object) : undefined
+      const to: Dict | undefined = store ? hmrState.get(store as object) : undefined
+      if (!from || !to || from === to) continue
+      batch(() => {
+        for (const k of Object.keys(from)) if (Object.hasOwn(to, k)) to[k] = clone(from[k])
+      })
+      kept.push(name)
+    }
+    if (kept.length) console.info(`[jotastic] HMR stores preservados: ${kept.join(', ')}`)
+  }
+  data.jotasticStores = stores
 }

@@ -41,8 +41,33 @@ function programPath(ast: t.File): NodePath<t.Program> {
   return program!
 }
 
-export function compile(code: string, options: { filename: string; dev?: boolean }): CompileResult {
-  const opts: CompileOptions = { filename: options.filename, dev: options.dev ?? true }
+/** `// @refresh reset` entre os comentários do topo do arquivo (antes de qualquer código). */
+export function hasRefreshReset(code: string): boolean {
+  const head = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/.exec(code)![0]
+  return /(?:\/\/|\*)\s*@refresh reset\b/.test(head)
+}
+
+export interface CompileCallOptions {
+  filename: string
+  /** Padrão: true. */
+  dev?: boolean
+  /**
+   * HMR (dev): `true` ou `{ preserveState }`. Emite `hash` do inicializador nos `let` e o rodapé
+   * `if (import.meta.hot) { … }` que registra os componentes exportados no runtime (`__hmrComponents`).
+   */
+  hmr?: boolean | { preserveState?: boolean }
+}
+
+export function compile(code: string, options: CompileCallOptions): CompileResult {
+  const dev = options.dev ?? true
+  const hmr =
+    dev && options.hmr
+      ? {
+          preserveState: typeof options.hmr === 'object' && !!options.hmr.preserveState,
+          reset: hasRefreshReset(code),
+        }
+      : null
+  const opts: CompileOptions = { filename: options.filename, dev, hmr }
   const isTS = /\.[mc]?tsx?$/.test(opts.filename)
   const isJSX = /\.[jt]sx$/.test(opts.filename)
   let ast: t.File = parse(code, {

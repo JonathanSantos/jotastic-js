@@ -229,3 +229,13 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | X-8 | Componente com ≥ 2 filhos fora de `<Slot>` + um `<Slot>` → compilador cai com `ReferenceError: Container is falsy` (`place()` em `emit/module.ts`); 10-modal cai nisso | **bug**; contorno com `<div>` em `examples/modal` |
 | X-9 | 10-modal: `ref={input}` sem `onCleanup`, `ref={dialog}` com | verificar |
 | X-10 | Exemplos ajustados: cart/styling `createStore<State>` (T-4), slots cast `SlotFn` (T-5), styling `String(c.v)`/`type` no lugar de `interface extends` | marcados `// [ajuste]` |
+
+## HMR e sourcemaps (passo 8)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| H-2 | APIs internas fora do contrato: `__hmrComponents(file, comps, opts)`, `__hmrResetRegistry()` em `jotastic/runtime`; `__hmrStores(data, stores, reset?)` em `jotastic/store`; `DevMeta.hash`; opção `hmr` em `compile()` | criadas (dev only); formalizar no contrato |
+| H-3 | Em dev com HMR, componente exportado devolve accessor (1 efeito a mais por instância) | só dev |
+| H-4 | `preserveState` não cobre `let` em continuação/branch, `let` desestruturado; `let` de `use*` com mesmo nome de um do componente colide | assim |
+| H-5 | Store preservado só em `export const x = createStore(` (regex); módulo de store não se auto-aceita (a atualização sobe para os componentes) | assim |
+| H-6 | Componentes não exportados não são registrados (trocados só quando o pai exportado remonta) | assim |

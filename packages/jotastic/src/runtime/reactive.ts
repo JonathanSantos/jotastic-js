@@ -127,8 +127,19 @@ class SignalNode<T> implements Signal<T> {
   }
 }
 
+/** Interno (dev, HMR): vê cada signal com `dev.hash` ao nascer; `{ value }` troca o valor inicial (preserveState). */
+type HmrSignalHook = (s: Signal<unknown>, dev: DevMeta) => { value: unknown } | undefined
+let hmrSignalHook: HmrSignalHook | null = null
+export function setHmrSignalHook(hook: HmrSignalHook | null): void {
+  hmrSignalHook = hook
+}
+
 function createSignal<T>(initial: T, wrap: ((v: T) => T) | null, dev?: DevMeta): Signal<T> {
   const s = new SignalNode(wrap ? wrap(initial) : initial, wrap)
+  if (DEV && hmrSignalHook && dev?.hash !== undefined) {
+    const kept = hmrSignalHook(s as Signal<unknown>, dev)
+    if (kept) s.value = wrap ? wrap(kept.value as T) : (kept.value as T)
+  }
   if (DEV && devtoolsHook()) {
     const owner = getOwner()
     emitDevtools({

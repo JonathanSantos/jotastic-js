@@ -7,11 +7,14 @@
  * - `dev` = `!config.isProduction` (serve ou `--mode development`).
  * - `devtools` (padrão: ligado em dev): no dev server injeta no HTML um `<script type="module">` que carrega o módulo
  *   virtual `/@jotastic/devtools`, que chama `installDevtools()` de `@jotastic/devtools`. Em prod não injeta nada.
+ * - HMR (só no dev server): o compilador recebe `hmr` e emite o rodapé `if (import.meta.hot) { … }` que registra os
+ *   componentes exportados no runtime (remontagem no lugar); módulos com `export const x = createStore(…)` ganham um
+ *   rodapé que preserva o estado dos stores. `hmr.preserveState` liga a preservação dos `let` (hash do inicializador).
  * - `CompileError` vira erro do Rollup/Vite com `loc` e `frame` (o overlay mostra a mensagem do diagnóstico);
  *   avisos do analyzer vão para `this.warn`.
  */
 import type { Plugin, ResolvedConfig } from 'vite'
-import { compile, CompileError } from '@jotastic/compiler'
+import { compile, CompileError, hasRefreshReset } from '@jotastic/compiler'
 import { formatDiagnostic } from '@jotastic/analyzer'
 
 export interface JotasticPluginOptions {
@@ -22,7 +25,11 @@ export interface JotasticPluginOptions {
   devtools?: boolean
   /** Importa `watch`, `on`, `external`, `onMount`, `inspect` automaticamente. Desligado; ainda não implementado. */
   autoImport?: boolean
-  /** HMR (passo 8). `preserveState` ainda não implementado. */
+  /**
+   * HMR no dev server (sempre ligado em `serve`). Componentes exportados são remontados no lugar; stores exportados
+   * (`export const x = createStore(…)`) mantêm o estado. `preserveState: true` (padrão: false) mantém também os `let`
+   * dos componentes cujo inicializador não mudou. `// @refresh reset` no topo do arquivo força reset.
+   */
   hmr?: { preserveState?: boolean }
 }
 
@@ -35,6 +42,25 @@ const JSX_FILE = /\.[jt]sx$/
 const SCRIPT_FILE = /\.[mc]?ts$/
 /** Declaração de `use*` (18 §1): `function useX`, `const useX =`, `useX = function`. */
 const USE_DECL = /\b(?:function\s+use[A-Z0-9_$]|(?:const|let|var)\s+use[A-Z0-9_$][\w$]*\s*=)/
+
+/** `export const nome = createStore(` / `createStore<T>(` (stores de módulo, preservados no HMR). */
+const STORE_EXPORT = /\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createStore\s*[<(]/g
+
+/** Nomes dos stores exportados (regex barata; outras formas não são preservadas no HMR). */
+export function storeExports(code: string): string[] {
+  return [...code.matchAll(STORE_EXPORT)].map((m) => m[1]!)
+}
+
+/**
+ * Rodapé de HMR dos stores: `__hmrStores(import.meta.hot.data, { a, b }, reset)` copia o estado do store antigo
+ * para o novo na reexecução. Sem `accept()`: a atualização sobe para os componentes que importam o store.
+ */
+export function storeFooter(names: string[], reset: boolean): string {
+  return (
+    `\nimport { __hmrStores as __jotasticHmrStores } from 'jotastic/store'\n` +
+    `if (import.meta.hot && import.meta.hot.data) __jotasticHmrStores(import.meta.hot.data, { ${names.join(', ')} }${reset ? ', true' : ''})\n`
+  )
+}
 
 /** Decide, sem parsear, se o arquivo pode ter corpo reativo. */
 export function shouldCompile(id: string, code: string): boolean {
@@ -63,6 +89,7 @@ export function codeFrame(code: string, line: number, column: number): string {
 export default function jotastic(options: JotasticPluginOptions = {}): Plugin {
   let dev = true
   let devtools = false
+  let hmr = false
 
   return {
     name: 'jotastic',
@@ -76,8 +103,10 @@ export default function jotastic(options: JotasticPluginOptions = {}): Plugin {
     configResolved(config: ResolvedConfig) {
       dev = !config.isProduction
       // Devtools só no dev server, mesmo com `devtools: true` explícito: nunca entra num bundle de `vite build`
-      // (o runtime de prod nem emite eventos). `autoImport` e `hmr.preserveState` ainda não existem.
+      // (o runtime de prod nem emite eventos). `autoImport` ainda não existe. HMR: idem, só no dev server.
       devtools = config.command === 'serve' && dev && (options.devtools ?? true)
+      // Vitest também é `serve`, mas não tem HMR de verdade (`import.meta.hot` incompleto)
+      hmr = config.command === 'serve' && dev && config.mode !== 'test'
     },
 
     resolveId(id) {
@@ -97,10 +126,16 @@ export default function jotastic(options: JotasticPluginOptions = {}): Plugin {
     },
 
     transform(code, id) {
-      if (!shouldCompile(id, code)) return null
       const filename = id.split('?', 1)[0]!
+      // stores de módulo: rodapé de HMR (só no dev server); o código não se move, o map anterior continua valendo
+      const stores =
+        hmr && !id.startsWith('\0') && !id.includes('/node_modules/') && /\.[mc]?[jt]sx?$/.test(filename)
+          ? storeExports(code)
+          : []
+      const footer = stores.length ? storeFooter(stores, hasRefreshReset(code)) : ''
+      if (!shouldCompile(id, code)) return footer ? { code: code + footer, map: null } : null
       try {
-        const result = compile(code, { filename, dev })
+        const result = compile(code, { filename, dev, hmr: hmr && { preserveState: !!options.hmr?.preserveState } })
         for (const d of result.diagnostics) {
           if (d.level !== 'warning') continue
           this.warn({
@@ -109,7 +144,7 @@ export default function jotastic(options: JotasticPluginOptions = {}): Plugin {
             loc: { line: d.loc.line, column: d.loc.column - 1 },
           })
         }
-        return { code: result.code, map: result.map }
+        return { code: result.code + footer, map: result.map }
       } catch (err) {
         if (err instanceof CompileError) {
           const { line, column } = err.loc

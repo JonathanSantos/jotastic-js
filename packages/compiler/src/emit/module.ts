@@ -61,8 +61,10 @@ function compileAllJSX(mod: ModuleContext): void {
           ? (mod.bodies.get(owner.node) ?? mod.thunks.get(owner.node)!)
           : new BodyContext(mod, null, null)
         const compiled = compileJSX(path, ctx)
-        if (owner) place(path, compiled)
-        else {
+        if (owner) {
+          // corpo de arrow virou bloco: irmãos na fila ficaram com paths velhos → próxima rodada (X-8)
+          if (place(path, compiled)) p.stop()
+        } else {
           // JSX fora de corpo reativo → thunk (18 §13)
           const th = thunk(compiled)
           mod.thunks.set(th, ctx)
@@ -114,6 +116,90 @@ function runtimeImport(mod: ModuleContext): t.ImportDeclaration {
   )
 }
 
+/**
+ * Exports do módulo para o HMR: componentes exportados (`nome exportado → identificador local`) e se há algum export
+ * que não é componente (store, constante, `use*`, re-export…): aí o módulo não se auto-aceita e a atualização sobe
+ * para os importadores (senão eles ficariam com o valor antigo).
+ */
+function hmrExports(
+  program: NodePath<t.Program>,
+  components: Set<t.Node>,
+): { comps: Map<string, string>; other: boolean } {
+  const comps = new Map<string, string>()
+  let other = false
+  const isComponentBinding = (local: string): boolean => {
+    const b = program.scope.getBinding(local)
+    if (!b) return false
+    const n = b.path.node
+    if (t.isFunctionDeclaration(n)) return components.has(n)
+    return t.isVariableDeclarator(n) && !!n.init && components.has(n.init) && b.kind === 'const'
+  }
+  for (const s of program.node.body) {
+    if (t.isExportAllDeclaration(s)) other = true
+    else if (t.isExportDefaultDeclaration(s)) {
+      const d = s.declaration
+      if (t.isFunctionDeclaration(d) && d.id && components.has(d)) comps.set('default', d.id.name)
+      else if (t.isIdentifier(d) && isComponentBinding(d.name)) comps.set('default', d.name)
+      else other = true
+    } else if (t.isExportNamedDeclaration(s)) {
+      if (s.exportKind === 'type') continue
+      const d = s.declaration
+      if (t.isFunctionDeclaration(d)) {
+        if (d.id && components.has(d)) comps.set(d.id.name, d.id.name)
+        else other = true
+      } else if (t.isVariableDeclaration(d)) {
+        for (const v of d.declarations) {
+          if (d.kind === 'const' && t.isIdentifier(v.id) && v.init && components.has(v.init))
+            comps.set(v.id.name, v.id.name)
+          else other = true
+        }
+      } else if (d) {
+        // class, enum (TS já removido) …
+        if (!t.isTSInterfaceDeclaration(d) && !t.isTSTypeAliasDeclaration(d) && !t.isTSDeclareFunction(d)) other = true
+      } else if (s.source) other = true
+      else {
+        for (const spec of s.specifiers) {
+          if (!t.isExportSpecifier(spec) || spec.exportKind === 'type') continue
+          const exported = t.isIdentifier(spec.exported) ? spec.exported.name : spec.exported.value
+          if (isComponentBinding(spec.local.name)) comps.set(exported, spec.local.name)
+          else other = true
+        }
+      }
+    }
+  }
+  return { comps, other }
+}
+
+/** `import.meta.hot` */
+function importMetaHot(): t.MemberExpression {
+  return t.memberExpression(t.metaProperty(t.identifier('import'), t.identifier('meta')), t.identifier('hot'))
+}
+
+/**
+ * Rodapé de HMR (dev): `if (import.meta.hot) { import.meta.hot.accept(); __hmrComponents(file, { A, B }, opts) }`.
+ * `accept()` literal (o Vite decide auto-aceitação pelo texto) só se todo export é componente.
+ */
+function hmrFooter(mod: ModuleContext, comps: Map<string, string>, accept: boolean): t.Statement {
+  const hmr = mod.opts.hmr!
+  const opts: t.ObjectProperty[] = []
+  if (hmr.preserveState) opts.push(t.objectProperty(t.identifier('preserveState'), t.booleanLiteral(true)))
+  if (hmr.reset) opts.push(t.objectProperty(t.identifier('reset'), t.booleanLiteral(true)))
+  const register = mod.call('__hmrComponents', [
+    t.stringLiteral(mod.opts.filename),
+    t.objectExpression(
+      [...comps].map(([exported, local]) =>
+        t.objectProperty(t.identifier(exported), t.identifier(local), false, exported === local),
+      ),
+    ),
+    ...(opts.length ? [t.objectExpression(opts)] : []),
+  ])
+  const body: t.Statement[] = []
+  if (accept)
+    body.push(t.expressionStatement(t.callExpression(t.memberExpression(importMetaHot(), t.identifier('accept')), [])))
+  body.push(t.expressionStatement(register))
+  return t.ifStatement(importMetaHot(), t.blockStatement(body))
+}
+
 /** Transforma o programa. Lança `CompileError` se o analyzer achou erros; devolve os avisos/dicas. */
 export function transformProgram(program: NodePath<t.Program>, analysis: Analysis, opts: CompileOptions): Diagnostic[] {
   const errors = analysis.diagnostics.filter((d) => d.level === 'error')
@@ -141,6 +227,11 @@ export function transformProgram(program: NodePath<t.Program>, analysis: Analysi
       exempt.add(spec.node.local.name)
     }
   }
+
+  const hot =
+    opts.dev && opts.hmr
+      ? hmrExports(program, new Set(analysis.bodies.filter((b) => b.kind === 'component').map((b) => b.node)))
+      : null
 
   const reserved = collectNames(program)
   for (const n of exempt) reserved.delete(n)
@@ -170,6 +261,7 @@ export function transformProgram(program: NodePath<t.Program>, analysis: Analysi
     spec.remove()
     if (decl.node.specifiers.length === 0) decl.remove()
   }
+  if (hot && hot.comps.size) program.node.body.push(hmrFooter(mod, hot.comps, !hot.other))
   const body = program.node.body
   let last = -1
   body.forEach((s, i) => {

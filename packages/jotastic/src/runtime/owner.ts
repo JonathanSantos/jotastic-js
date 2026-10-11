@@ -10,6 +10,8 @@ export type Dispose = () => void
 export interface DevMeta {
   name?: string
   loc?: string
+  /** Só com HMR (`compile(…, { hmr })`): hash do código do inicializador de um `let` (preserva o valor no hot swap). */
+  hash?: string
 }
 
 export type ErrorPhase = 'setup' | 'binding' | 'effect' | 'handler' | 'async'

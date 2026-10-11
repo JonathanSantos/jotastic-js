@@ -292,6 +292,16 @@ function valueUnused(p: NodePath): boolean {
 
 const ASSIGN_LOGICAL: Record<string, '||' | '&&' | '??'> = { '||=': '||', '&&=': '&&', '??=': '??' }
 
+/** Sourcemap: o nó reescrito (`count.set(…)`, `count.get()`) herda a posição do original (`count++`, `count`). */
+function withLoc<N extends t.Node>(node: N, from: t.Node): N {
+  if (from.loc && !node.loc) {
+    node.loc = from.loc
+    node.start = from.start
+    node.end = from.end
+  }
+  return node
+}
+
 function rewriteAssignment(p: NodePath<t.AssignmentExpression>, ctx: BodyContext): void {
   const { left, right, operator } = p.node
   if (t.isIdentifier(left)) {
@@ -309,7 +319,7 @@ function rewriteAssignment(p: NodePath<t.AssignmentExpression>, ctx: BodyContext
         ? t.logicalExpression(logical, rule.read(), right)
         : t.binaryExpression(operator.slice(0, -1) as t.BinaryExpression['operator'], rule.read(), right)
     }
-    p.replaceWith(rule.write(value))
+    p.replaceWith(withLoc(rule.write(value), p.node))
     return
   }
   if ((t.isArrayPattern(left) || t.isObjectPattern(left)) && operator === '=') {
@@ -345,11 +355,15 @@ function rewriteUpdate(p: NodePath<t.UpdateExpression>, ctx: BodyContext): void 
   }
   const op = p.node.operator === '++' ? '+' : '-'
   const set = rule.write(t.binaryExpression(op, rule.read(), t.numericLiteral(1)))
+  withLoc(set, p.node)
   if (valueUnused(p)) p.replaceWith(set)
-  else if (p.node.prefix) p.replaceWith(t.sequenceExpression([set, rule.read()]))
+  else if (p.node.prefix) p.replaceWith(withLoc(t.sequenceExpression([set, rule.read()]), p.node))
   else
     p.replaceWith(
-      t.sequenceExpression([set, t.binaryExpression(op === '+' ? '-' : '+', rule.read(), t.numericLiteral(1))]),
+      withLoc(
+        t.sequenceExpression([set, t.binaryExpression(op === '+' ? '-' : '+', rule.read(), t.numericLiteral(1))]),
+        p.node,
+      ),
     )
 }
 
@@ -415,7 +429,9 @@ function rewriteCall(p: NodePath<t.CallExpression>, ctx: BodyContext): void {
       const b = p.scope.getBinding(arg.name)
       const res = b && ctx.resources.get(b.identifier)
       if (!res) return
-      p.replaceWith(api === 'pending' ? callMethod(member(gid(res), 'pending'), 'get') : callMethod(gid(res), 'refresh'))
+      p.replaceWith(
+        api === 'pending' ? callMethod(member(gid(res), 'pending'), 'get') : callMethod(gid(res), 'refresh'),
+      )
       return
     }
     case 'useSlots':
@@ -439,7 +455,7 @@ export function rewriteBody(ctx: BodyContext): void {
       if (!rule) return
       const parent = p.parentPath
       if (parent?.isObjectProperty() && parent.node.shorthand && p.key === 'value') parent.node.shorthand = false
-      p.replaceWith(rule.read())
+      p.replaceWith(withLoc(rule.read(), p.node))
     },
     AssignmentExpression(p) {
       rewriteAssignment(p, ctx)
@@ -493,7 +509,7 @@ function emitDeclarator(ctx: BodyContext, d: t.VariableDeclarator, kind: 'let' |
     switch (info.kind) {
       case 'signal':
       case 'state':
-        return [constDecl(name, mod.call(info.kind, withMeta([init], mod.meta(name, d.id))))]
+        return [constDecl(name, mod.call(info.kind, withMeta([init], mod.metaWithHash(name, d.id, init))))]
       case 'memo':
         return [constDecl(name, mod.call('memo', withMeta([arrow(init)], mod.meta(name, d.id))))]
       case 'stateLiteral':
@@ -667,7 +683,7 @@ function emitRef(ctx: BodyContext, path: NodePath<t.JSXAttribute>, expr: t.Expre
     const b = path.scope.getBinding(expr.name)
     if (!b || b.kind === 'let' || b.kind === 'var') {
       const out: t.Statement[] = [stmt(t.assignmentExpression('=', t.identifier(expr.name), gid(el)))]
-      if (ctx.inFlow)
+      if (ctx.inFlow || ctx.inChildren)
         out.push(
           stmt(
             mod.call('onCleanup', [

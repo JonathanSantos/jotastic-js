@@ -1,14 +1,24 @@
 /** Estado compartilhado da emissão: módulo (imports, templates, nomes) e corpo reativo (regras de reescrita). */
 import * as t from '@babel/types'
+import _generate from '@babel/generator'
 import type { NodePath } from '@babel/traverse'
 import type { ReactiveBody } from '@jotastic/analyzer'
 import { compileError, notImplemented } from './errors'
+
+/** `@babel/generator` é CJS: o default pode vir embrulhado conforme o loader. */
+const generate: typeof _generate = (_generate as unknown as { default?: typeof _generate }).default ?? _generate
 
 export interface CompileOptions {
   /** Caminho do arquivo; o `basename` vai para os `loc` de dev (`Counter.tsx:5:7`). */
   filename: string
   /** Dev: metadados `{ name, loc }`, `data-jo`, `inspect`. Prod: nada disso. */
   dev: boolean
+  /**
+   * HMR (só com `dev`): `hash` do inicializador no meta de cada `let` (signal/state) e rodapé
+   * `if (import.meta.hot) { … __hmrComponents(…) }` registrando os componentes exportados.
+   * `preserveState` vai para o runtime; `reset` = `// @refresh reset` no topo do arquivo.
+   */
+  hmr?: { preserveState: boolean; reset: boolean } | null
 }
 
 /** Como ler/escrever um binding reescrito (18 §4). */
@@ -34,6 +44,17 @@ export function gid(name: string): t.Identifier {
   const n = t.identifier(name)
   generatedNodes.add(n)
   return n
+}
+
+/** FNV-1a 32 bits (base 36) do código gerado de `node`, sem comentários. */
+export function hashCode(node: t.Node): string {
+  const code = generate(node, { comments: false, compact: true }).code
+  let h = 0x811c9dc5
+  for (let i = 0; i < code.length; i++) {
+    h ^= code.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(36)
 }
 
 export function basename(filename: string): string {
@@ -112,6 +133,14 @@ export class ModuleContext {
     return l ? `${this.file}:${l.start.line}:${l.start.column + 1}` : this.file
   }
 
+  /** Com HMR: `{ name, loc, hash }`, `hash` = FNV-1a do código de `init` (inicializador do `let`). */
+  metaWithHash(name: string, node: t.Node, init: t.Node): t.ObjectExpression | null {
+    const meta = this.meta(name, node)
+    if (meta && this.opts.hmr)
+      meta.properties.push(t.objectProperty(t.identifier('hash'), t.stringLiteral(hashCode(init))))
+    return meta
+  }
+
   /** `{ name, loc }` em dev; `null` em prod (o argumento é omitido). */
   meta(name: string | undefined, node: t.Node): t.ObjectExpression | null {
     if (!this.opts.dev) return null
@@ -158,6 +187,11 @@ export class BodyContext {
    * `autofocus(el)` (18 §5.3, §5.6).
    */
   inFlow = false
+  /**
+   * Dentro de `children`/slot de componente (X-9): quem recebe decide quando os nós morrem (ex.: corpo de modal com
+   * early return), então `ref` também ganha `onCleanup`. `autofocus` não muda.
+   */
+  inChildren = false
   /** Bindings vindos de `await` (identificador da declaração) → nome do recurso (`_r0`), para `pending`/`refresh`. */
   readonly resources = new Map<t.Node, string>()
   /** Nome do parâmetro de props quando o compilador o criou (props desestruturadas). */

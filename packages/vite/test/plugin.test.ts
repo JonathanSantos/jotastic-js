@@ -1,7 +1,14 @@
 import { fileURLToPath } from 'node:url'
 import { build, createServer, type Rollup } from 'vite'
 import { describe, expect, test, vi } from 'vitest'
-import jotastic, { codeFrame, DEVTOOLS_URL, shouldCompile } from '../src/index'
+import { SourceMap } from 'node:module'
+import jotastic, {
+  codeFrame,
+  DEVTOOLS_URL,
+  shouldCompile,
+  storeExports,
+  type JotasticPluginOptions,
+} from '../src/index'
 
 const COUNTER = `export function Counter() {
   let count: number = 0
@@ -17,9 +24,15 @@ const LOOP_RETURN = `export function List({ items }: { items: string[] }) {
 }
 `
 
+const STORE = `import { createStore } from 'jotastic/store'
+
+export const cart = createStore((set) => ({ items: [] as string[], add: (x: string) => set((s) => ({ items: [...s.items, x] })) }))
+export const ui: Store<{ open: boolean }> = createStore<{ open: boolean }>(() => ({ open: false }))
+`
+
 /** Contexto mínimo de plugin: `error` lança o objeto recebido, `warn` acumula. */
-function setup(mode: 'serve' | 'build' = 'serve') {
-  const plugin = jotastic()
+function setup(mode: 'serve' | 'build' = 'serve', options?: JotasticPluginOptions) {
+  const plugin = jotastic(options)
   const configResolved = plugin.configResolved as (c: unknown) => void
   configResolved({ isProduction: mode === 'build', command: mode })
   const warnings: unknown[] = []
@@ -163,6 +176,88 @@ describe('@jotastic/vite', () => {
       } finally {
         await server.close()
       }
+    })
+  })
+
+  describe('sourcemap', () => {
+    test('map do transform é válido, aponta para o arquivo de origem e traz o conteúdo original', () => {
+      const { run } = setup()
+      const out = run(COUNTER, '/app/src/Counter.tsx?t=1') as {
+        code: string
+        map: ConstructorParameters<typeof SourceMap>[0]
+      }
+      expect(out.map.sources).toEqual(['/app/src/Counter.tsx'])
+      expect(out.map.sourcesContent).toEqual([COUNTER])
+      // `count++` do handler: posição no gerado → posição no .tsx
+      const lines = out.code.split('\n')
+      const genLine = lines.findIndex((l) => l.includes('count.set('))
+      expect(genLine).toBeGreaterThan(-1)
+      const entry = new SourceMap(out.map).findEntry(genLine, lines[genLine]!.indexOf('count.set(')) as {
+        originalSource: string
+        originalLine: number
+        originalColumn: number
+      }
+      expect(entry.originalSource).toBe('/app/src/Counter.tsx')
+      expect(entry.originalLine).toBe(2)
+      expect(COUNTER.split('\n')[2]!.slice(entry.originalColumn)).toMatch(/^count\+\+/)
+    })
+  })
+
+  describe('HMR', () => {
+    test('dev server: componente exportado ganha rodapé import.meta.hot com accept e registro no runtime', () => {
+      const { run } = setup('serve')
+      const out = run(COUNTER, '/app/src/Counter.tsx') as { code: string }
+      expect(out.code).toContain('if (import.meta.hot) {')
+      expect(out.code).toContain('import.meta.hot.accept()')
+      expect(out.code).toMatch(/__hmrComponents\('\/app\/src\/Counter\.tsx', \{\s*Counter\s*\}\)/)
+      expect(out.code).toMatch(/import \{[^}]*__hmrComponents[^}]*\} from 'jotastic\/runtime'/)
+      // hash do inicializador do `let` (preserveState decide no runtime)
+      expect(out.code).toMatch(/hash: '[0-9a-z]+'/)
+    })
+
+    test('preserveState vai para o runtime; // @refresh reset força reset', () => {
+      const { run } = setup('serve', { hmr: { preserveState: true } })
+      const out = run(COUNTER, '/app/src/Counter.tsx') as { code: string }
+      expect(out.code).toMatch(/\{\s*preserveState: true\s*\}/)
+      const reset = run('// @refresh reset\n' + COUNTER, '/app/src/Counter.tsx') as { code: string }
+      expect(reset.code).toMatch(/\{\s*preserveState: true,\s*reset: true\s*\}/)
+    })
+
+    test('módulo com export que não é componente não se auto-aceita (a atualização sobe)', () => {
+      const { run } = setup('serve')
+      const out = run(COUNTER + 'export const VERSION = 1\n', '/app/src/Counter.tsx') as { code: string }
+      expect(out.code).toContain('__hmrComponents(')
+      expect(out.code).not.toContain('accept(')
+    })
+
+    test('build (prod): sem import.meta.hot, sem hash, sem rodapé de store', () => {
+      const { run } = setup('build')
+      const out = run(COUNTER, '/app/src/Counter.tsx') as { code: string }
+      expect(out.code).not.toContain('import.meta.hot')
+      expect(out.code).not.toContain('__hmr')
+      expect(out.code).not.toContain('hash')
+      expect(run(STORE, '/app/src/cart.ts')).toBeNull()
+    })
+
+    test('dev server: store exportado ganha rodapé que preserva o estado, sem mexer no código', () => {
+      const { run } = setup('serve')
+      const out = run(STORE, '/app/src/cart.ts') as { code: string; map: null }
+      expect(out.code.startsWith(STORE)).toBe(true)
+      expect(out.map).toBeNull()
+      expect(out.code).toContain("import { __hmrStores as __jotasticHmrStores } from 'jotastic/store'")
+      expect(out.code).toContain(
+        'if (import.meta.hot && import.meta.hot.data) __jotasticHmrStores(import.meta.hot.data, { cart, ui })',
+      )
+      expect(out.code).not.toContain('accept(')
+      const reset = run('// @refresh reset\n' + STORE, '/app/src/cart.ts') as { code: string }
+      expect(reset.code).toContain('{ cart, ui }, true)')
+      expect(run('export const x = 1\n', '/app/src/x.ts')).toBeNull()
+      expect(run(STORE, '/app/node_modules/lib/cart.ts')).toBeNull()
+    })
+
+    test('storeExports: só `export const x = createStore(`', () => {
+      expect(storeExports(STORE)).toEqual(['cart', 'ui'])
+      expect(storeExports('const s = createStore(() => ({}))\nexport { s }')).toEqual([])
     })
   })
 })

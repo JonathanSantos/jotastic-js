@@ -26,11 +26,23 @@ function renderIn(owner: Owner, fn: () => Rendered): Rendered {
 
 // ─── component ───────────────────────────────────────────────────────────────
 
+/** Interno (dev, HMR): componente registrado por `__hmrComponents` monta por aqui (`undefined` → caminho normal). */
+type AnyComponent = (props: any) => Rendered | Promise<never>
+type HmrComponentHook = (Comp: AnyComponent, props: unknown, dev?: DevMeta) => Rendered | undefined
+let hmrComponent: HmrComponentHook | null = null
+export function setHmrComponentHook(hook: HmrComponentHook | null): void {
+  hmrComponent = hook
+}
+
 /**
  * Invoca um componente dentro de um owner próprio (kind 'component', name = Comp.name em dev), sem rastrear.
  * Erro no setup → `handleError(owner, e, 'setup')`, descarta o owner e devolve null.
  */
 export function component<P>(Comp: (props: P) => Rendered | Promise<never>, props: P, dev?: DevMeta): Rendered {
+  if (DEV && hmrComponent) {
+    const hot = hmrComponent(Comp as AnyComponent, props, dev)
+    if (hot !== undefined) return hot
+  }
   const owner = createOwner('component', getOwner(), DEV ? { name: dev?.name ?? Comp.name, loc: dev?.loc } : undefined)
   try {
     return runWithOwner(owner, () => untrack(() => Comp(props))) as Rendered
