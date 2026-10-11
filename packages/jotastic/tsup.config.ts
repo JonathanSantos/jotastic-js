@@ -11,4 +11,5 @@ export default defineConfig({
   dts: true,
   splitting: true,
   clean: true,
+  external: ['jotastic/jsx-runtime'],
 })

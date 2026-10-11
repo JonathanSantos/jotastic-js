@@ -180,7 +180,10 @@ export function Portal(props: { to: Element; children?: JSX.Element }): JSX.Elem
 }
 
 /** Marcador de slot: o compilador o transforma no objeto de slots dos children (18 §12). Nunca executa. */
-export function Slot(_props: { name: string; children?: JSX.Element | ((...args: any[]) => JSX.Element) }): JSX.Element {
+export function Slot(_props: {
+  name: string
+  children?: JSX.Element | ((...args: any[]) => JSX.Element)
+}): JSX.Element {
   return notCompiled('<Slot>', 'só é válido como filho direto de um componente')
 }
 

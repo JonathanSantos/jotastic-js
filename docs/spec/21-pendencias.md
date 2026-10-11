@@ -136,3 +136,14 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | C-5 | **Readonly de derivado (P11)** profundo bloqueava `todo.done = v` em itens vindos de `visible` (02-todos) | `derived-mutated` só protege objetos criados pelo derivado; estado reativo aninhado passa. Readonly de store continua profundo |
 | Q-5 | `@jotastic/test`: trocar `__JOTASTIC_DEVTOOLS__` depois da instalação → reinstala por cima e conta em dobro | assim |
 | H-1 | happy-dom 15: `form.nextSibling` é `null` (Proxy) | contorno em `packages/jotastic/test/setup/happy-dom-form.ts`; happy-dom 20 corrige → atualizar e remover |
+
+## API pública (`index.ts`)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| I-1 | IDs fora de 12: `not-compiled` (marcador executado sem compilador: `Slot`, `external`, `pending`/`refresh` em valor comum) e `mount-target-missing` (`mount(<App/>, '#nada')`) | criados |
+| I-2 | `mount(…, { onError: a, plugins: [app => app.onError(b)] })` | todos chamados em ordem; se um lança, os seguintes são pulados e vai para `console.error`. Decidir: todos ou o último vence |
+| I-3 | `<Ctx.Provider value={x}>` com `x` reativo | `value` lido 1×; consumidores não atualizam (funciona com objeto de getters) |
+| I-4 | `external` fora de corpo reativo | marcador `not-compiled` (alternativa: proxy lazy) |
+| I-5 | Typecheck dos exemplos usa `test/types/jotastic.d.ts`, não `src/index.ts` | divergência real × contrato não aparece; migrar quando estável |
+| B-1 | tsup DTS falhava com `import _JSX = JSX` em `jsx-runtime.d.ts` | `public-types.ts` importa `jotastic/jsx-runtime` (self-reference) e o tsup o marca como external |

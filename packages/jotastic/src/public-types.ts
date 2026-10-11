@@ -4,7 +4,7 @@
  * (`src/index.ts`, `src/store.ts`, `src/fetch.ts`), que reexportam estes tipos.
  */
 import type { ErrorInfo } from './runtime/index.js'
-import type { JSX } from './jsx-runtime.js'
+import type { JSX } from 'jotastic/jsx-runtime'
 
 export type { ErrorInfo, JSX }
 
