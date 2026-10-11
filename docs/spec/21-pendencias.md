@@ -67,3 +67,12 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | P-4 | `push`/`sort` em array readonly | um aviso por escrita (sem dedupe) |
 | P-5 | 11-runtime cita `Map.has` comparando raw e proxy, mas `Map` nunca é proxiado | não implementado |
 | P-6 | signals internos por chave emitem `signal:create/set` sem nome no devtools | assim; rever no painel |
+
+## @jotastic/test
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| Q-1 | Rethrow do root sem `onError`: `setRethrowUnhandled` não é exportado de `jotastic/runtime` | o hook de devtools relança no evento `error` com `handledBy: 'console'` (só dev). Decidir subpath interno |
+| Q-2 | 13-tooling mostra `counts()` como `{ bindings, memos }`; 19 usa `{ effects, memos, writes }` | seguido o 19 |
+| Q-3 | Erro não tratado em flush assíncrono relança em microtask; `tick()` não rejeita | assim |
+| Q-4 | `counts().writes` não conta escritas do setup fora de efeitos | assim |
