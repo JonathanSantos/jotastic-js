@@ -1,0 +1,20 @@
+{
+  "name": "jotastic",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./runtime": { "types": "./dist/runtime.d.ts", "default": "./dist/runtime.js" },
+    "./store": { "types": "./dist/store.d.ts", "default": "./dist/store.js" },
+    "./fetch": { "types": "./dist/fetch.d.ts", "default": "./dist/fetch.js" },
+    "./jsx-runtime": { "types": "./src/jsx-runtime.d.ts" }
+  },
+  "files": ["dist", "src/jsx-runtime.d.ts"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  }
+}

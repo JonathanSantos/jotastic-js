@@ -1,0 +1,31 @@
+{
+  "name": "jotastic-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/jotastic",
+    "packages/analyzer",
+    "packages/compiler",
+    "packages/vite",
+    "packages/test",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:watch": "vitest",
+    "dev": "npm run dev -w examples/counter",
+    "size": "npm run size --workspaces --if-present",
+    "bench": "echo 'bench: passo 6'",
+    "lint": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "happy-dom": "^15.0.0",
+    "prettier": "^3.3.0",
+    "tsup": "^8.2.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@jotastic/analyzer",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "dependencies": { "@babel/types": "^7.25.0", "@babel/traverse": "^7.25.0" }, "devDependencies": { "@babel/parser": "^7.25.0", "@types/babel__traverse": "^7.20.0" },
+  "scripts": { "build": "tsup", "test": "vitest run", "typecheck": "tsc -p ." }
+}
