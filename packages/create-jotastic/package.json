@@ -1,0 +1,20 @@
+{
+  "name": "create-jotastic",
+  "version": "0.0.0",
+  "description": "Cria um app Jotastic (Vite + TS + ESLint + @jotastic/test).",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "create-jotastic": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "template"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

@@ -10,6 +10,7 @@
     "packages/test",
     "packages/devtools",
     "packages/eslint-plugin",
+    "packages/create-jotastic",
     "examples/*"
   ],
   "scripts": {
