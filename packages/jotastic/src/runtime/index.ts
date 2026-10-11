@@ -30,3 +30,22 @@ export {
   type BoundaryHandle,
 } from './owner'
 export { emitDevtools, type DevtoolsEvent, type DevtoolsHook } from './devtools'
+export { external, on, onMount, inspect } from './external'
+export { rest, mergeProps, createContext, provide, useContext, type Context } from './props'
+export {
+  template,
+  insert,
+  attr,
+  prop,
+  bool,
+  classList,
+  style,
+  spread,
+  listen,
+  twoWay,
+  autofocus,
+  type ClassValue,
+  type StyleValue,
+} from './dom'
+export { createRoot, type RootOptions } from './root'
+export { reactive, raw, isReactive, toReactive, readonly, shallowEqual } from './proxy'

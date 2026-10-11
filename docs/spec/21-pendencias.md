@@ -31,3 +31,39 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | N-5 | Efeitos/memos criados dentro de um efeito | pertencem ao owner do efeito pai e acumulam em reexecuções; só branch/item/continuação criam owners próprios |
 | N-6 | Memo com erro | erro guardado e relançado em cada `get()`; recupera quando a fonte muda |
 | N-7 | `handleError` | usa o `onError` do ancestral mais próximo; se `boundary.catch` lançar, sobe; erro em cleanup usa fase `'effect'` |
+
+## External e props (passo 3)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| X-1 | `external(create, update)`: `update` roda logo após `create` no mesmo flush (precisa rodar 1× para coletar deps); ex.: `chart.update()` logo após `new Chart` | assim |
+| X-2 | `set` do Signal devolvido por `external` não definido | escrita simples, sem destruir |
+| X-3 | `useContext` sem provider nem default: sem ID em 12; `createContext()` ≡ `createContext(undefined)` | id `context-missing`; `provide` fora de owner → `use-outside-owner` |
+| X-4 | "devtools mostra o método de destruição" sem evento em devtools.d.ts | nada emitido |
+| X-5 | `external(() => store.subscribe(…))` devolvendo função de unsubscribe | não chamada (spec só lista métodos) |
+| X-6 | embrulho de handler duplicado entre `on` (external.ts) e `listen` (dom.ts) | unificar depois que dom.ts existir |
+
+## DOM e root (passo 3)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| M-1 | `<select value={plan}>{opts.map(…)}</select>`: `prop` roda antes do `list` criar as `<option>`, valor não pega | sem re-aplicação; decidir (ex.: compilador emite `prop` de select depois dos filhos) |
+| M-2 | `prop('value', array)` em `select multiple` | marca `option.selected` por valor |
+| M-3 | "accessor aninhado, memoizado" no `insert` | chamado a cada execução; memo fica com `branches`/`children` |
+| M-4 | `spread` com chaves que mudam sempre: efeitos por chave descartados ficam na lista do owner (ver N-5) | assim |
+| M-5 | `style` número 0 | `'0'` sem px; lista própria de propriedades de comprimento |
+| M-6 | `style` string → objeto | zera `cssText` antes |
+| M-7 | `spread` em SVG | chaves comuns viram `attr` |
+| M-8 | `checked` no `spread` | sempre `prop`, inclusive radio |
+| M-9 | `createRoot` em alvo com filhos | não apaga; anexa depois |
+
+## Proxy (passo 2)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| P-1 | `arr[0] = novoObj` precisa reexecutar efeito que faz `arr.map(...)` (assina só `$iter`) | troca de índice notifica o índice **e** `$iter` |
+| P-2 | `o.list = o.list.filter(...)` grava array com proxies; `includes(rawItem)` falharia | busca tenta arg, `raw(arg)` e `reactive(raw(arg))` |
+| P-3 | `raw`/`isReactive` sobre proxy readonly (resultado de memo em dev) | atravessam o readonly, para dev ≡ prod |
+| P-4 | `push`/`sort` em array readonly | um aviso por escrita (sem dedupe) |
+| P-5 | 11-runtime cita `Map.has` comparando raw e proxy, mas `Map` nunca é proxiado | não implementado |
+| P-6 | signals internos por chave emitem `signal:create/set` sem nome no devtools | assim; rever no painel |
