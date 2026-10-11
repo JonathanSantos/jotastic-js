@@ -4,7 +4,7 @@
  */
 import * as t from '@babel/types'
 import type { NodePath } from '@babel/traverse'
-import type { BodyContext } from '../context'
+import { isGenerated, type BodyContext } from '../context'
 import { childrenOf, type Child } from './template'
 import { childValue } from './flow'
 import { arrow, attrName, getter, importedName, isDynamic, isJSX, isLiteralValue, jsxName, propKey } from './util'
@@ -206,7 +206,9 @@ function childrenEntry(path: NodePath<t.JSXElement>, ctx: BodyContext): t.Object
     if (c.kind === 'expression') {
       const e = c.path.node
       if (t.isFunction(e)) return t.objectProperty(t.identifier('children'), e)
-      childValue(c.path, ctx) // fluxo → gancho da parte 2
+      // K-14: condicional com JSX → `get children() { return branches(…) }` (o mesmo valor de um filho de elemento)
+      const v = childValue(c.path, ctx)
+      if (t.isCallExpression(v) && isGenerated(v.callee)) return getter('children', v)
       return propEntry('children', e)
     }
     return getter('children', c.path.node)

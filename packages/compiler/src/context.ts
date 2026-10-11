@@ -158,6 +158,8 @@ export class BodyContext {
    * `autofocus(el)` (18 §5.3, §5.6).
    */
   inFlow = false
+  /** Bindings vindos de `await` (identificador da declaração) → nome do recurso (`_r0`), para `pending`/`refresh`. */
+  readonly resources = new Map<t.Node, string>()
   /** Nome do parâmetro de props quando o compilador o criou (props desestruturadas). */
   propsName: string | null = null
   /** Statements inseridos no início do corpo (`const _rest = rest(props, […])`). */

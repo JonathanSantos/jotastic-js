@@ -1,26 +1,28 @@
 /**
- * Controle de fluxo (18 §7–§10): condicionais, listas, early return. `await` (§10) é da parte 3.
+ * Controle de fluxo (18 §7–§10): condicionais, listas, early return e `await`.
  *
  * Fases (chamadas por `module.ts`, na ordem):
- * 1. `checkBodyFlow(ctx)` — antes de qualquer reescrita: valida (`await`/`async` ainda lançam), guarda os pontos de
- *    decisão do escopo raiz (§9), registra as regras do fluxo (índice de lista → `i()`, `const` de lista → `_rows`,
- *    mini-corpo do item) e os `data-jo` dos casos.
+ * 1. `checkBodyFlow(ctx)` — antes de qualquer reescrita: valida, guarda os pontos de decisão do escopo raiz (§9) e os
+ *    `await` (§10: `x` → `_rN.value.get()`), registra as regras do fluxo (índice de lista → `i()`, `const` de lista →
+ *    `_rows`, mini-corpo do item) e os `data-jo` dos casos.
  * 2. `emitBodyFlow(ctx)` — depois de `rewriteBody`/`emitDeclarations`: emite os signals/memos do mini-corpo dos itens
- *    e reestrutura o escopo raiz em `return branches([...], () => { continuação })`.
+ *    e reestrutura o escopo raiz em `return branches([...], () => { continuação })` e
+ *    `const _rN = resource(() => expr); return continuation(_rN, () => { continuação })`; remove o `async`.
  * 3. Durante as rodadas de JSX (`template.ts`): `childValue` devolve `branches(...)` para condicionais em posição de
  *    filho e `listStatement` emite `list(parent, marker, …)` para listas em filho de elemento.
  *
  * Funções de render de casos, itens e continuações ficam em `flowFns`: o JSX dentro delas compila com
  * `ctx.inFlow = true` (`onCleanup` do `ref`, `autofocus(el)`; 18 §5.3, §5.6).
  *
- * Para §10: um `await` no escopo raiz é mais um ponto de decisão de `sequence` (setup → `resource`, resto →
- * `continuation`); `checkBodyFlow` só precisa parar de lançar e `sequence` ganhar o caso.
+ * Um `await` no escopo raiz é mais um ponto de decisão de `sequence` (setup → `resource`, resto → `continuation`);
+ * a ordem do código é respeitada (§10.9): `if` depois de `await` fica dentro da continuação dele, e vice-versa.
  */
 import * as t from '@babel/types'
 import type { NodePath } from '@babel/traverse'
 import { isProbablyPrimitive } from '@jotastic/analyzer'
 import { gid, isGenerated, type BodyContext, type Rule } from '../context'
-import { arrow, attrName, callMethod, isDynamic, isIntrinsic, isJSX, isLiteralValue, some } from './util'
+import { leaves, type Leaf } from './bindings'
+import { arrow, attrName, callMethod, isDynamic, isIntrinsic, isJSX, isLiteralValue, member, some } from './util'
 
 // ─── Detecção ────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,16 @@ interface FlowState {
   listConsts: Map<t.VariableDeclarator, string>
   /** Nomes gerados de `const` de lista (o `{_rows}` no JSX vira `_rows(parent, marker)`). */
   listConstNames: Set<string>
+  /** Statements do escopo raiz com `await` (§10) → recurso. */
+  awaits: Map<t.Node, AwaitPoint>
+}
+
+interface AwaitPoint {
+  /** Nome do recurso (`_r0`). */
+  name: string
+  node: t.AwaitExpression
+  /** Declarador (`const x = await …`); ausente em `await expr` solto. */
+  declarator: t.VariableDeclarator | null
 }
 
 const states = new WeakMap<BodyContext, FlowState>()
@@ -88,6 +100,7 @@ function stateOf(ctx: BodyContext): FlowState {
       itemDecls: new Map(),
       listConsts: new Map(),
       listConstNames: new Set(),
+      awaits: new Map(),
     }
     states.set(ctx, s)
   }
@@ -232,21 +245,87 @@ function registerListCallback(ctx: BodyContext, call: NodePath<t.CallExpression 
 }
 
 /**
- * Valida o fluxo do corpo e registra o que precisa existir antes da reescrita de §4. `await`/`async` (§10) ainda
- * lançam `not-implemented` (parte 3).
+ * `await` do escopo raiz (§10): `const x = await e` / `let x = await e` / `const [a, b] = await e` / `await e;`.
+ * Leituras de `x` → `_rN.value.get()` (folhas de desestruturação: `_rN.value.get()[0]`); `let x` → `x = v` vira
+ * `_rN.value.set(v)` (D36: sobrescrita local; `x.campo = v` passa pelo proxy).
  */
+function registerAwait(ctx: BodyContext, node: t.AwaitExpression): void {
+  const st = stateOf(ctx)
+  const fn = ctx.fn!
+  const s = rootStatementOf(ctx, node)
+  let declarator: t.VariableDeclarator | null = null
+  if (s && t.isVariableDeclaration(s) && s.declarations.length === 1 && s.declarations[0]!.init === node)
+    declarator = s.declarations[0]!
+  else if (!(s && t.isExpressionStatement(s) && s.expression === node))
+    return ctx.mod.notImplemented(
+      node,
+      '`await` no corpo do componente fora de `const x = await …` / `await …;` (um `await` por statement)',
+    )
+  const name = ctx.name('_r', true)
+  st.awaits.set(s, { name, node, declarator })
+  if (!declarator) return
+  const isLet = (s as t.VariableDeclaration).kind === 'let'
+  const value = () => callMethod(member(gid(name), 'value'), 'get')
+  const set = (v: t.Expression) => callMethod(member(gid(name), 'value'), 'set', [v])
+  const id = declarator.id
+  if (t.isIdentifier(id)) {
+    const b = fn.scope.getBinding(id.name)
+    if (!b) return
+    const rule: Rule = { read: value }
+    if (isLet) rule.write = set
+    ctx.rules.set(b.identifier, rule)
+    ctx.resources.set(b.identifier, name)
+    return
+  }
+  // `const [a, b] = await Promise.all(…)` → um recurso; `a` → `_rN.value.get()[0]` (§10.5)
+  const out: Leaf[] = []
+  leaves(ctx, id, value, out)
+  for (const leaf of out) {
+    const b = fn.scope.getBinding(leaf.id.name)
+    if (!b) continue
+    const rule: Rule = { read: leaf.access }
+    // `let [a] = await …; a = v` → `_rN.value.get()[0] = v` (escrita no proxy do valor)
+    if (isLet)
+      rule.target = () => {
+        const e = leaf.access()
+        return t.isLogicalExpression(e) ? e.left : e
+      }
+    ctx.rules.set(b.identifier, rule)
+    ctx.resources.set(b.identifier, name)
+  }
+}
+
+/** `await` que sobrou fora dos pontos do escopo raiz (ex.: `return <p>{await x}</p>`): sem forma de emitir. */
+function checkStrayAwaits(ctx: BodyContext): void {
+  const st = stateOf(ctx)
+  const known = new Set<t.Node>([...st.awaits.values()].map((a) => a.node))
+  const fn = ctx.fn!
+  fn.traverse({
+    Function(p) {
+      p.skip()
+    },
+    AwaitExpression(p) {
+      if (!known.has(p.node)) ctx.mod.notImplemented(p.node, '`await` fora de um statement do escopo raiz')
+    },
+    ForOfStatement(p) {
+      if (p.node.await) ctx.mod.notImplemented(p.node, '`for await` no corpo do componente')
+    },
+  })
+}
+
+/** Valida o fluxo do corpo e registra o que precisa existir antes da reescrita de §4. */
 export function checkBodyFlow(ctx: BodyContext): void {
   const body = ctx.body!
   const st = stateOf(ctx)
   for (const f of body.flow) {
-    if (f.kind === 'await') ctx.mod.notImplemented(f.node, '`await` no corpo do componente')
+    if (f.kind === 'await') registerAwait(ctx, f.node)
     if (f.kind === 'return') {
       const s = rootStatementOf(ctx, f.node)
       if (s) st.decisions.add(s)
       if (f.node.argument) ctx.dataJo.add(f.node.argument)
     }
   }
-  if (body.isAsync) ctx.mod.notImplemented(body.node, 'componente `async`')
+  if (body.isAsync || st.awaits.size) checkStrayAwaits(ctx)
 
   // listas: `.map` com JSX em filho de elemento e `const rows = xs.map(…)`
   for (const info of body.bindings.values()) {
@@ -572,9 +651,11 @@ function switchDecision(s: t.SwitchStatement, rest: t.Statement[]): Decision {
  */
 function sequence(ctx: BodyContext, stmts: t.Statement[]): t.Statement[] {
   const st = stateOf(ctx)
-  const k = stmts.findIndex((s) => st.decisions.has(s))
+  const k = stmts.findIndex((s) => st.decisions.has(s) || st.awaits.has(s))
   if (k < 0) return stmts
   const setup = stmts.slice(0, k)
+  const aw = st.awaits.get(stmts[k]!)
+  if (aw) return [...setup, ...awaitStatements(ctx, aw, stmts.slice(k + 1))]
   const cases: Case[] = []
   let rest: t.Statement[] = stmts.slice(k + 1)
   let s: t.Statement | undefined = stmts[k]
@@ -589,17 +670,39 @@ function sequence(ctx: BodyContext, stmts: t.Statement[]): t.Statement[] {
   return [...setup, t.returnStatement(branchesCall(ctx, cases, continuationOf(ctx, rest)))]
 }
 
+/**
+ * `const x = await e; resto` → `const _rN = resource(() => e', dev); return continuation(_rN, () => { resto })`
+ * (§10.1–§10.4). A expressão já foi reescrita (§4): o efeito do recurso assina o que ela lê.
+ */
+function awaitStatements(ctx: BodyContext, aw: AwaitPoint, rest: t.Statement[]): t.Statement[] {
+  const mod = ctx.mod
+  const d = aw.declarator
+  const label = d ? Object.keys(t.getBindingIdentifiers(d.id)).join(', ') : undefined
+  const meta = mod.meta(label, d ? d.id : aw.node)
+  const args: t.Expression[] = [arrow(aw.node.argument)]
+  if (meta) args.push(meta)
+  const decl = t.variableDeclaration('const', [t.variableDeclarator(gid(aw.name), mod.call('resource', args))])
+  const fn = continuationOf(ctx, rest) ?? flowArrow(t.nullLiteral())
+  return [decl, t.returnStatement(mod.call('continuation', [gid(aw.name), fn]))]
+}
+
+/** `branches(…)`/`continuation(…)` gerados: já são o valor de render (não viram accessor). */
+function isFlowCall(e: t.Node | null | undefined): boolean {
+  return t.isCallExpression(e) && isGenerated(e.callee)
+}
+
 /** Fallback a partir dos statements da continuação. */
 function continuationOf(ctx: BodyContext, stmts: t.Statement[]): t.Expression | null {
   if (!stmts.length) return null
   const body = sequence(ctx, stmts)
   const only = body[0]
-  if (body.length === 1 && t.isReturnStatement(only)) return flowArrow(renderValue(only.argument))
+  if (body.length === 1 && t.isReturnStatement(only))
+    return flowArrow(isFlowCall(only.argument) ? only.argument! : renderValue(only.argument))
   // statements depois do `return` final são inalcançáveis
   const end = body.findIndex((x) => t.isReturnStatement(x))
   const live = end >= 0 ? body.slice(0, end + 1) : body
   const last = live[live.length - 1]
-  if (t.isReturnStatement(last) && !(t.isCallExpression(last.argument) && isGenerated(last.argument.callee)))
+  if (t.isReturnStatement(last) && !isFlowCall(last.argument))
     live[live.length - 1] = t.returnStatement(renderValue(last.argument))
   return flowArrow(t.blockStatement(live))
 }
@@ -613,7 +716,10 @@ export function emitBodyFlow(ctx: BodyContext): void {
   emitItemDecls(ctx)
   const fn = ctx.fn!
   const body = fn.node.body
-  if (st.decisions.size && t.isBlockStatement(body)) body.body = sequence(ctx, body.body)
+  const restructure = st.decisions.size > 0 || st.awaits.size > 0
+  if (restructure && t.isBlockStatement(body)) body.body = sequence(ctx, body.body)
+  // a função compilada não é `async` (§10): o `await` virou `resource` + `continuation`
+  fn.node.async = false
   // statements movidos para funções novas / `let` que viraram `const`: escopos do Babel refeitos para as rodadas de JSX
-  if (st.decisions.size || st.itemDecls.size) fn.scope.crawl()
+  if (restructure || st.itemDecls.size) fn.scope.crawl()
 }

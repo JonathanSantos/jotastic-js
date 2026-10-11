@@ -197,10 +197,10 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | # | Caso concreto | Provisório |
 |---|---|---|
 | K-10 | Texto só de espaço encostado em `{/* comentário */}` | não vira nó de texto (compiled/02 pressupõe; React manteria) |
-| K-11 | **Lista fora de filho de elemento intrínseco**: `<Card>{items.map(i => <Row/>)}</Card>`, fragmento, dentro de condicional | vira accessor comum (recria tudo, `i` número); `const rows` fora de posição de filho → `not-implemented` |
+| K-11 | **Lista fora de filho de elemento intrínseco**: `<Card>{items.map(i => <Row/>)}</Card>`, fragmento, dentro de condicional | vira accessor comum (recria tudo, `i` número); `const rows` fora de posição de filho → `not-implemented`. Sem solução limpa sem API nova: proposta `list(null, marker, …)` lendo `marker.parentNode` a cada reconcile + âncora emitida pelo compilador |
 | K-12 | Valor não-JSX dinâmico num caso: `{name \|\| <i>anon</i>}`, 18 §7 diz `() => a'` mas o render é untracked | emitido `() => () => a'` (accessor vivo) |
 | K-13 | Mini-corpo do item de lista classificado pelo compilador (analyzer não classifica callbacks); `({ name }) => <li>{name}</li>` lê 1× (ver L-1); prelude de caso não classificado | assim |
-| K-14 | Filho único condicional de componente: `get children() { return x && <p/> }` sem `branches` | a corrigir (usar `childValue`) |
+| K-14 | Filho único condicional de componente: `get children() { return x && <p/> }` sem `branches` | **feito** (`get children() { return branches(…) }`) |
 | K-15 | compiled/02 omite `!!` em `todo.editing`; omitido só quando a condição é booleana pela sintaxe | allowlist |
 
 ## Devtools (flash + contadores)
@@ -211,3 +211,12 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | W-2 | `@jotastic/devtools` não é dependência do `@jotastic/vite`; o app precisa instalá-lo | assim |
 | W-3 | `flush:end` não traz contagem de memos | contados por `memo:run` desde `flush:start` |
 | W-4 | Painel de Atualizações, Alt+clique, lista de `inspect` | não feitos |
+
+## Compilador, parte 3 (`await`)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| W-5 | `const n = (await f()).length`, `<p>{await x}</p>`, `const a = await f(), b = 1`, `for await` | `not-implemented` (spec cobre só `const x = await EXPR` e `await EXPR;`) |
+| W-6 | `await` dentro de `use*` (18 §11 não fala) | `not-implemented` |
+| W-7 | `pending(y)` com `y` que não vem de `await` | deixado como está; em runtime lança `not-compiled` (I-1). Sem ID de diagnóstico em build |
+| W-8 | compiled/05 importa `Boundary` como implementação ilustrativa; omite dev meta em `component(Skeleton)` | allowlist |

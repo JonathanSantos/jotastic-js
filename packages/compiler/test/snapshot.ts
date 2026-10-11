@@ -79,10 +79,10 @@ export function replaceStrings(ast: t.File, map: Record<string, string>): boolea
   return Object.keys(map).every((k) => seen.has(k))
 }
 
-/** Texto de `export function name…` até a `}` de coluna 0 que o fecha. */
+/** Texto de `export [async] function name…` até a `}` de coluna 0 que o fecha. */
 export function sliceFunction(source: string, name: string): string {
   const lines = source.split('\n')
-  const start = lines.findIndex((l) => l.startsWith(`export function ${name}`))
+  const start = lines.findIndex((l) => new RegExp(`^export (async )?function ${name}\\b`).test(l))
   if (start < 0) throw new Error(`função ${name} não encontrada`)
   const end = lines.findIndex((l, i) => i > start && l === '}')
   return lines.slice(start, end + 1).join('\n')

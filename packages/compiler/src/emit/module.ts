@@ -74,23 +74,32 @@ function compileAllJSX(mod: ModuleContext): void {
   }
 }
 
-/** `import { Slot } from 'jotastic'` sem uso depois da compilação dos slots (18 §12: `<Slot>` some do código). */
-function unusedSlotImports(program: NodePath<t.Program>): NodePath<t.ImportSpecifier>[] {
+/** Marcadores de `jotastic` que a compilação faz sumir: `<Slot>` (18 §12), `pending(x)`/`refresh(x)` de recurso (§10.6). */
+const MARKER_APIS = new Set(['Slot', 'pending', 'refresh'])
+
+/** Imports de marcadores (`Slot`, `pending`, `refresh`) sem uso depois da compilação. */
+function unusedMarkerImports(program: NodePath<t.Program>): NodePath<t.ImportSpecifier>[] {
   const out: NodePath<t.ImportSpecifier>[] = []
   for (const s of program.get('body')) {
     if (!s.isImportDeclaration() || s.node.source.value !== 'jotastic') continue
     for (const spec of s.get('specifiers')) {
       if (!spec.isImportSpecifier()) continue
       const imported = t.isIdentifier(spec.node.imported) ? spec.node.imported.name : spec.node.imported.value
-      if (imported !== 'Slot') continue
+      if (!MARKER_APIS.has(imported)) continue
       const local = spec.node.local.name
       let used = false
-      for (const other of program.node.body) {
-        if (t.isImportDeclaration(other)) continue
-        t.traverseFast(other, (n) => {
-          if ((t.isIdentifier(n) || t.isJSXIdentifier(n)) && n.name === local) used = true
-        })
-      }
+      program.traverse({
+        ImportDeclaration(p) {
+          p.skip()
+        },
+        Identifier(p) {
+          // chave de objeto/getter (`get pending()`) não é uso
+          if (p.node.name === local && p.isReferencedIdentifier()) used = true
+        },
+        JSXIdentifier(p) {
+          if (p.node.name === local && !p.parentPath.isJSXAttribute()) used = true
+        },
+      })
       if (!used) out.push(spec)
     }
   }
@@ -155,7 +164,7 @@ export function transformProgram(program: NodePath<t.Program>, analysis: Analysi
 
   compileAllJSX(mod)
 
-  removable.push(...unusedSlotImports(program))
+  removable.push(...unusedMarkerImports(program))
   for (const spec of removable) {
     const decl = spec.parentPath as NodePath<t.ImportDeclaration>
     spec.remove()

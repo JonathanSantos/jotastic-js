@@ -58,3 +58,22 @@ export function Page({ admin }: { admin: boolean }) {
   )
 }
 `
+
+/**
+ * Entrada do 05: `UserCard` e `Sidebar` de examples/06-async.tsx, recortados (A-11: o exemplo importa `api` e também
+ * o declara com `declare const`, o que o Babel rejeita). Imports do exemplo + `./components` (`Skeleton`/`ErrorBox`,
+ * como o snapshot). `UserCard` começa na linha 5, como no exemplo: o `loc` `UserCard.tsx:6:9` do snapshot bate.
+ */
+export function asyncInput(): string {
+  const src = spec('examples/06-async.tsx')
+  return [
+    `import { pending, refresh, Boundary } from 'jotastic'`,
+    `import { api } from './lib/api'`,
+    `import { Skeleton, ErrorBox } from './components'`,
+    '',
+    sliceFunction(src, 'UserCard'),
+    '',
+    sliceFunction(src, 'Sidebar'),
+    '',
+  ].join('\n')
+}

@@ -160,3 +160,46 @@ describe('early return', () => {
     expect(c.textContent).toBe('?')
   })
 })
+
+describe('children de componente (K-14, K-11)', () => {
+  const CODE = `function Box(props: { children?: unknown }) {
+    return <div>{props.children}</div>
+  }
+  export function K(props: { x: number; items: string[] }) {
+    return (
+      <>
+        <Box>{props.x > 0 && <p>{props.x}</p>}</Box>
+        <Box>{props.items.map((i) => <i>{i}</i>)}</Box>
+      </>
+    )
+  }`
+
+  test('K-14: filho único condicional vira `branches`: o caso ativo não é recriado', async () => {
+    const p = reactive({ x: 0, items: [] as string[] })
+    const c = await mount(CODE, 'K', p)
+    const box = c.querySelector('div')!
+    expect(box.querySelector('p')).toBeNull()
+    p.x = 1
+    await tick()
+    const el = box.querySelector('p')!
+    expect(el.textContent).toBe('1')
+    p.x = 2
+    await tick()
+    expect(box.querySelector('p')).toBe(el) // mesmo caso: só o texto muda
+    expect(el.textContent).toBe('2')
+    p.x = 0
+    await tick()
+    expect(box.querySelector('p')).toBeNull()
+  })
+
+  test('K-11: lista fora de filho de elemento continua accessor comum (recria os itens, mas atualiza)', async () => {
+    const p = reactive({ x: 0, items: ['a'] })
+    const c = await mount(CODE, 'K', p)
+    const box = c.querySelectorAll('div')[1]!
+    expect(box.textContent).toBe('a')
+    p.items.push('b')
+    await tick()
+    expect(Array.from(box.querySelectorAll('i')).map((i) => i.textContent)).toEqual(['a', 'b'])
+    expect(compile(CODE, { filename: 'K.tsx' }).code).not.toMatch(/\blist\(/)
+  })
+})

@@ -26,7 +26,7 @@ function signalRule(name: string, writable: boolean): Rule {
 /** Caminho de acesso a uma folha de um padrão de desestruturação. */
 type Access = () => t.Expression
 
-interface Leaf {
+export interface Leaf {
   id: t.Identifier
   access: Access
 }
@@ -35,7 +35,7 @@ interface Leaf {
  * Folhas de um padrão: `{ a, b: { c = 1 }, d: [e] }` → `a` ↦ `base.a`, `c` ↦ `base.b.c ?? 1`, `e` ↦ `base.d[0]`.
  * `rest` é tratado pelo chamador (só em props, 18 §4).
  */
-function leaves(
+export function leaves(
   ctx: BodyContext,
   pattern: t.Node,
   access: Access,
@@ -407,8 +407,17 @@ function rewriteCall(p: NodePath<t.CallExpression>, ctx: BodyContext): void {
       return
     }
     case 'pending':
-    case 'refresh':
-      return mod.notImplemented(p.node, `\`${api}(…)\` (recursos de \`await\`)`)
+    case 'refresh': {
+      // pending(x) → _rN.pending.get(); refresh(x) → _rN.refresh() (18 §10.6). Fora de recurso: inalterado (o
+      // marcador do runtime lança `not-compiled`, I-1)
+      const arg = args[0]
+      if (args.length !== 1 || !t.isIdentifier(arg) || isGenerated(arg)) return
+      const b = p.scope.getBinding(arg.name)
+      const res = b && ctx.resources.get(b.identifier)
+      if (!res) return
+      p.replaceWith(api === 'pending' ? callMethod(member(gid(res), 'pending'), 'get') : callMethod(gid(res), 'refresh'))
+      return
+    }
     case 'useSlots':
       // useSlots(children) → slots(props.children): o argumento é reescrito na continuação da travessia (18 §4, §12)
       p.node.callee = mod.helper('slots')
@@ -508,12 +517,18 @@ function emitDeclarator(ctx: BodyContext, d: t.VariableDeclarator, kind: 'let' |
       case 'list':
         return emitListConst(ctx, d) ?? keep()
       case 'resource':
-        return mod.notImplemented(d, '`await` no corpo do componente')
+        // `const x = await …`: emitido por flow.ts (`resource` + `continuation`, 18 §10)
+        if (ctx.body!.kind === 'use') return mod.notImplemented(d, '`await` no corpo de `use*`')
+        return keep()
       default:
         return keep()
     }
   }
   // desestruturação
+  if (d.init && t.isAwaitExpression(d.init)) {
+    if (ctx.body!.kind === 'use') return mod.notImplemented(d, '`await` no corpo de `use*`')
+    return keep() // `const [a, b] = await …`: flow.ts (18 §10.5)
+  }
   const result = resultTemps.get(d)
   if (result) return [constDecl(result, d.init ?? t.identifier('undefined'))]
   const tmp = patternTemps.get(d)

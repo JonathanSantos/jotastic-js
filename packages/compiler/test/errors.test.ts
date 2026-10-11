@@ -54,7 +54,25 @@ describe('ganchos da parte 2 (not-implemented com loc)', () => {
       2,
       /índice de lista/,
     ],
-    ['await', `export async function A() {\n  const u = await fetch('/x')\n  return <p>{u}</p>\n}`, 2, /await/],
+    [
+      '`await` fora de statement do escopo raiz',
+      `export async function A() {\n  const u = 1\n  return <p>{await f(u)}</p>\n}`,
+      3,
+      /`await` fora de um statement/,
+    ],
+    [
+      '`await` dentro de expressão de declaração',
+      `export async function A() {\n  const n = (await f()).length\n  return <p>{n}</p>\n}`,
+      2,
+      /`const x = await …`/,
+    ],
+    [
+      '`await` em `use*`',
+      `export async function useX() {\n  const n = await f()\n  return { n }\n}`,
+      2,
+      /`use\*`/,
+      'useX.ts',
+    ],
     [
       // 18 §12 não diz para onde vai o lado sem `<Slot>` de um ternário (lacuna da parte 2b)
       'filho comum em condicional com <Slot>',
