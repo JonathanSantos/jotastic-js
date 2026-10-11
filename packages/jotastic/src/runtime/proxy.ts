@@ -453,6 +453,9 @@ function roHandler(diagnostic: Diagnostic, dev: DevMeta | undefined): ProxyHandl
       if (Array.isArray(t) && hasOwn(arrayMethods, key)) return arrayMethods[key as string]
       const v = Reflect.get(t, key, t)
       if (typeof v !== 'object' || v === null) return v
+      // Derivado: valores aninhados que são estado (proxy reativo, ex.: itens de `todos.filter(…)`) pertencem à fonte,
+      // não ao derivado; escrever neles é legítimo (`todo.done = v` em 02-todos) e igual a prod. Store: profundo.
+      if (diagnostic === 'derived-mutated' && targets.has(v)) return v
       const base = toRaw(t)
       if (!Object.isExtensible(base)) {
         const d = Object.getOwnPropertyDescriptor(base, key)

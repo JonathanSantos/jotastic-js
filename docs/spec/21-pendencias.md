@@ -124,3 +124,15 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | Y-3 | Descendente async novo depois do primeiro carregamento (branch troca para componente com `await`) | boundary volta a pending (segue o memo do contrato; 07 fala só em primeiro carregamento) |
 | Y-4 | `await`s aninhados: children entram e saem do DOM no mesmo flush | sem pintura intermediária, mas há mutações |
 | Y-5 | Erro síncrono de `fn` | fase `'async'` |
+
+## Compilados à mão rodando no runtime (passo 3)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| C-1 | 19 §Compilador: "marcar 1 item → `effects: 1`". Pelo próprio compiled/02 o mínimo é 4 (classList do li, `prop checked` que roda sem escrever, `{remaining}`, `{remaining === 1 ? …}`), +2 no primeiro item marcado (branch "Limpar concluídas") | teste afirma `effects: 4` e 1 escrita no `<ul>`. Decidir se a tabela conta só o li |
+| C-2 | compiled/03 `useMediaQuery`: `memo(() => matchMedia(query()))` devolve instância → `derived-recreates-instance` a cada troca; ao trocar a query, `matches` fica com o valor antigo até um `change` | documentado no teste |
+| C-3 | compiled/06: `items` não declarado | declarado no teste |
+| C-4 | compiled/02 não emite `autofocus()` no input raiz (coerente com 18 §5.6) → montado pelo runtime, sem foco | assim |
+| C-5 | **Readonly de derivado (P11)** profundo bloqueava `todo.done = v` em itens vindos de `visible` (02-todos) | `derived-mutated` só protege objetos criados pelo derivado; estado reativo aninhado passa. Readonly de store continua profundo |
+| Q-5 | `@jotastic/test`: trocar `__JOTASTIC_DEVTOOLS__` depois da instalação → reinstala por cima e conta em dobro | assim |
+| H-1 | happy-dom 15: `form.nextSibling` é `null` (Proxy) | contorno em `packages/jotastic/test/setup/happy-dom-form.ts`; happy-dom 20 corrige → atualizar e remover |

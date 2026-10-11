@@ -209,7 +209,7 @@ describe('objetos reativos (P1–P13)', () => {
   test('P11 dev: escrever em readonly avisa com id e loc; valor não muda', () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const s = state({ a: 1, n: { x: 1 }, list: [1] })
-    const m = memo(() => ({ total: s.get().a + 1, n: s.get().n, list: s.get().list }), {
+    const m = memo(() => ({ total: s.get().a + 1, n: { x: s.get().n.x }, list: [...s.get().list] }), {
       name: 'derivado',
       loc: 'App.tsx:3:9',
     })
@@ -219,10 +219,10 @@ describe('objetos reativos (P1–P13)', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy.mock.calls[0]![0]).toContain('derived-mutated')
     expect(spy.mock.calls[0]![0]).toContain('App.tsx:3:9')
-    v.n.x = 5 // profundo
-    expect(s.peek().n.x).toBe(1)
+    v.n.x = 5 // profundo (objeto criado pelo derivado)
+    expect(v.n.x).toBe(1)
     v.list.push(2)
-    expect(s.peek().list).toEqual([1])
+    expect(v.list).toEqual([1])
     delete (v as Partial<typeof v>).total
     expect(v.total).toBe(2)
     expect(spy.mock.calls.every((c) => String(c[0]).includes('derived-mutated'))).toBe(true)
@@ -235,6 +235,33 @@ describe('objetos reativos (P1–P13)', () => {
     expect(ro.count).toBe(0)
     expect(spy.mock.calls[0]![0]).toContain('store-mutated-outside-action')
     expect(spy.mock.calls[0]![0]).toContain('cart.ts:5:1')
+  })
+
+  test('P11c derivado: valor aninhado que é estado (proxy reativo) não é readonly — itens de lista filtrada', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const todos = state([
+      { id: 1, done: false },
+      { id: 2, done: true },
+    ])
+    const visible = memo(() => todos.get().filter((t) => !t.done), { name: 'visible' })
+    const all = memo(() => todos.get(), { name: 'all' })
+    const item = visible.get()[0]!
+    expect(isReactive(item)).toBe(true)
+    item.done = true // como `twoWay(_cb, 'checked', v => (todo.done = v))` em 02-todos
+    expect(todos.peek()[0]!.done).toBe(true)
+    all.get()[1]!.done = false
+    expect(todos.peek()[1]!.done).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+    // o próprio resultado continua readonly, mesmo quando é o array de estado
+    all.get().push({ id: 3, done: false })
+    expect(todos.peek()).toHaveLength(2)
+    expect(spy.mock.calls[0]![0]).toContain('derived-mutated')
+    // store continua profundo
+    spy.mockClear()
+    const ro = readonly(reactive({ n: { x: 1 } }), 'store-mutated-outside-action')
+    ro.n.x = 2
+    expect(ro.n.x).toBe(1)
+    expect(spy).toHaveBeenCalledTimes(1)
   })
 
   test('P11b readonly de proxy reativo continua rastreando e encontra raw em includes', () => {
