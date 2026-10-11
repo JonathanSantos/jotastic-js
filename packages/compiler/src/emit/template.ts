@@ -11,7 +11,7 @@ import type { NodePath } from '@babel/traverse'
 import { gid, type BodyContext } from '../context'
 import { autofocusBinding, elementAttribute, elementSpread, escapeAttr, type AttrResult } from './bindings'
 import { compileComponent } from './components'
-import { childValue } from './flow'
+import { childValue, isInFlow, isListChild, listStatement } from './flow'
 import { arrow, attrName, isIntrinsic, jsxName } from './util'
 
 export interface Compiled {
@@ -61,32 +61,39 @@ export function childrenOf(path: NodePath<t.JSXElement | t.JSXFragment>, ctx: Bo
       else out.push(c)
     }
   }
-  for (const c of path.get('children')) {
+  const kids = path.get('children')
+  // `{/* comentário */}`: o espaço em branco encostado nele não vira texto (K-10)
+  const isComment = (k: NodePath | undefined) =>
+    !!k && k.isJSXExpressionContainer() && t.isJSXEmptyExpression(k.node.expression)
+  kids.forEach((c, i) => {
     if (c.isJSXText()) {
       const s = cleanJSXText(c.node.value)
+      if (!s.trim() && (isComment(kids[i - 1]) || isComment(kids[i + 1]))) return
       if (s) text(s)
     } else if (c.isJSXElement()) element(c)
     else if (c.isJSXFragment()) fragment(c)
     else if (c.isJSXSpreadChild()) ctx.mod.notImplemented(c.node, 'spread de filhos (`{...xs}`)')
     else if (c.isJSXExpressionContainer()) {
       const e = c.get('expression')
-      if (e.isJSXEmptyExpression()) continue
+      if (e.isJSXEmptyExpression()) return
       const n = e.node
       if (t.isStringLiteral(n)) text(n.value)
       else if (t.isNumericLiteral(n)) text(String(n.value))
       else if (t.isTemplateLiteral(n) && n.expressions.length === 0) text(n.quasis[0]?.value.cooked ?? '')
-      else if (t.isBooleanLiteral(n) || t.isNullLiteral(n) || t.isIdentifier(n, { name: 'undefined' })) continue
+      else if (t.isBooleanLiteral(n) || t.isNullLiteral(n) || t.isIdentifier(n, { name: 'undefined' })) return
       else if (e.isJSXElement()) element(e)
       else if (e.isJSXFragment()) fragment(e)
       else out.push({ kind: 'expression', path: e as NodePath<t.Expression> })
     }
-  }
+  })
   return out.filter((c) => c.kind !== 'text' || c.value !== '')
 }
 
 // ─── Despacho ────────────────────────────────────────────────────────────────
 
 export function compileJSX(path: NodePath<t.JSXElement | t.JSXFragment>, ctx: BodyContext): Compiled {
+  // dentro de branch/item/continuação: `ref` ganha `onCleanup`, `autofocus` ganha `autofocus(el)` (18 §5.3, §5.6)
+  ctx.inFlow = isInFlow(path, ctx)
   if (path.isJSXFragment()) return { stmts: [], expr: compileFragment(path, ctx) }
   const el = path as NodePath<t.JSXElement>
   if (!isIntrinsic(el.node.openingElement.name)) return { stmts: [], expr: compileComponent(el, ctx) }
@@ -250,7 +257,12 @@ function compileElement(path: NodePath<t.JSXElement>, ctx: BodyContext): Compile
     const value = (c: Child): t.Expression =>
       c.kind === 'component' ? c.path.node : childValue((c as Extract<Child, { kind: 'expression' }>).path, ctx)
 
-    if (children.length === 1 && dynamic(children[0]!)) {
+    const only = children.length === 1 ? children[0]! : null
+    if (only?.kind === 'expression' && isListChild(only.path, ctx)) {
+      // lista como único filho → list(el, null, …)
+      const e = only.path.node
+      bindings.push({ node, emit: (el) => [listStatement(ctx, e, el, null)] })
+    } else if (only && dynamic(only)) {
       // único conteúdo dinâmico → insert(el, read, null)
       const v = value(children[0]!)
       bindings.push({ node, emit: (el) => [t.expressionStatement(mod.call('insert', [gid(el), v, t.nullLiteral()]))] })
@@ -261,8 +273,14 @@ function compileElement(path: NodePath<t.JSXElement>, ctx: BodyContext): Compile
           node.children.push({ kind: 'text', needed: false })
         } else if (c.kind === 'element') {
           node.children.push(build(c.path, childSvg, false))
+        } else if (c.kind === 'expression' && isListChild(c.path, ctx)) {
+          // lista → statement `list(parent, marker, …)` (não é valor de `insert`)
+          html += '<!>'
+          const marker: MarkerNode = { kind: 'marker', needed: true }
+          node.children.push(marker)
+          const e = c.path.node
+          bindings.push({ node: marker, emit: (_m, markerRef) => [listStatement(ctx, e, node.ref!, markerRef!)] })
         } else {
-          // gancho: list — a parte 2 emite `list(parent, marker, …)` como statement aqui
           html += '<!>'
           const marker: MarkerNode = { kind: 'marker', needed: true }
           node.children.push(marker)

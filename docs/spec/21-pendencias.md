@@ -180,3 +180,14 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | V-2 | Counter: **6813 B brotli** (limite 3 KB); com `DEV=false` forçado, 5673 B — proxy/arrayMethods entram via `signal`/`memo`/`state`; helpers `__publicField` do target padrão do Vite | a fazer (tree-shaking do runtime, `build.target: 'es2022'`) |
 | V-3 | 19 pede `size.test.ts` | feito como `scripts/size.mjs` (`npm run size`) |
 | V-4 | Plugin Vite: `.ts` só compila se uma regex barata acha declaração `use*`; `autoImport` e `hmr.preserveState` não implementados; `devtools` só flag | assim |
+
+## Compilador, parte 2b (`use*` e slots)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| U-1 | **Aridade de `use*` importada**: `import { useFetch } from './useFetch'; useFetch('/x')` → o chamador não sabe de `init`, não passa thunk, e o corpo chama `init()` → TypeError. No mesmo módulo o compilador completa com `() => undefined` (como no compiled/03) | **bug aberto**. Proposta: o corpo do `use*` normaliza parâmetros ausentes (`init ??= () => undefined` ou leitura `init?.()`) |
+| U-2 | Rest em `use*`: 18 diz "array de getters" | leitura de `args` devolve valores (`args.map(g => g())`) |
+| U-3 | `{x ? <Slot name="h"/> : <i/>}`: 18 §12 não diz para onde vai o lado sem slot | `not-implemented` |
+| U-4 | Escrita em parâmetro de `use*` (`url = x`) | não reescrita |
+| U-5 | `useX(...xs)` | `not-implemented` |
+| U-6 | Snapshots 03/06: locs do compiled supõem um arquivo por função e alguns não batem com nenhuma versão do exemplo; 06 declara templates no meio do módulo; template estático `() => _tN()` vs `{ const _el = _tN(); return _el }` | allowlist explícita nos testes |

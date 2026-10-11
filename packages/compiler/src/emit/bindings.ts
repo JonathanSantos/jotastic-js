@@ -7,6 +7,7 @@ import type { NodePath } from '@babel/traverse'
 import type { BindingInfo } from '@jotastic/analyzer'
 import { attributeKind, eventName, isAssignable, normalizeAttribute } from '@jotastic/analyzer'
 import { gid, isGenerated, type BodyContext, type Rule, type TwoWayKind } from '../context'
+import { emitListConst } from './flow'
 import { emitUseCall } from './use'
 import { arrow, callMethod, importedName, isUseName, member, memberRoot } from './util'
 
@@ -80,6 +81,8 @@ function leaves(
 
 /** Desestruturações de `const` derivado: declarator → temporária (`const _d = memo(() => init)`). */
 const patternTemps = new WeakMap<t.Node, string>()
+/** Desestruturações de resultado de `use*`: declarator → temporária (`const _d = useX(…)`). */
+const resultTemps = new WeakMap<t.Node, string>()
 
 /** Props (componente): parâmetro único → `props`; desestruturadas viram `props.x [?? d]`, rest vira `rest(props, …)`. */
 function setupParams(ctx: BodyContext): void {
@@ -131,12 +134,12 @@ function setupParams(ctx: BodyContext): void {
   }
 }
 
-/** Regras dos bindings do escopo raiz (18 §4). */
-function setupBindings(ctx: BodyContext): void {
+/** Regras dos bindings do escopo raiz (18 §4). Também usada pelos corpos `use*` (`use.ts`). */
+export function setupBindings(ctx: BodyContext): void {
   const fn = ctx.fn!
   const done = new Set<t.Node>()
   for (const info of ctx.body!.bindings.values()) {
-    if (info.flowIndex !== -1) continue // continuações: parte 2
+    // continuações (flowIndex ≥ 0): mesma classificação; ainda estão no escopo raiz (flow.ts as move depois)
     const d = info.declarator
     if (t.isIdentifier(d.id)) {
       if (!GET_KINDS.has(info.kind)) continue
@@ -146,7 +149,17 @@ function setupBindings(ctx: BodyContext): void {
     }
     if (done.has(d)) continue
     done.add(d)
-    if (info.kind === 'memo') {
+    if (info.kind === 'useResult') {
+      // `const { a } = useX(…)` → `const _a = useX(…)`; `a` → `_a.a` (o getter do retorno continua reativo)
+      const tmp = ctx.name(`_${destructuredBase(d.id as t.LVal)}`)
+      resultTemps.set(d, tmp)
+      const out: Leaf[] = []
+      leaves(ctx, d.id, () => gid(tmp), out)
+      for (const leaf of out) {
+        const b = fn.scope.getBinding(leaf.id.name)
+        if (b) ctx.rules.set(b.identifier, { read: leaf.access })
+      }
+    } else if (info.kind === 'memo') {
       // `const { a, b } = expr` derivado → `const _d = memo(() => expr)`; `a` → `_d.get().a`
       const tmp = ctx.name(`_${destructuredBase(d.id as t.LVal)}`)
       patternTemps.set(d, tmp)
@@ -397,7 +410,9 @@ function rewriteCall(p: NodePath<t.CallExpression>, ctx: BodyContext): void {
     case 'refresh':
       return mod.notImplemented(p.node, `\`${api}(…)\` (recursos de \`await\`)`)
     case 'useSlots':
-      return mod.notImplemented(p.node, '`useSlots(children)` (slots)')
+      // useSlots(children) → slots(props.children): o argumento é reescrito na continuação da travessia (18 §4, §12)
+      p.node.callee = mod.helper('slots')
+      return
     case null:
       if (isUseName(callee.name)) emitUseCall(p, ctx)
       return
@@ -491,7 +506,7 @@ function emitDeclarator(ctx: BodyContext, d: t.VariableDeclarator, kind: 'let' |
         return [constDecl(name, mod.call('reactive', [init])), ...memos]
       }
       case 'list':
-        return mod.notImplemented(d, '`const` de lista (`const rows = items.map(i => <li/>)`)')
+        return emitListConst(ctx, d) ?? keep()
       case 'resource':
         return mod.notImplemented(d, '`await` no corpo do componente')
       default:
@@ -499,6 +514,8 @@ function emitDeclarator(ctx: BodyContext, d: t.VariableDeclarator, kind: 'let' |
     }
   }
   // desestruturação
+  const result = resultTemps.get(d)
+  if (result) return [constDecl(result, d.init ?? t.identifier('undefined'))]
   const tmp = patternTemps.get(d)
   if (tmp) {
     const names = Object.keys(t.getBindingIdentifiers(d.id))

@@ -43,36 +43,24 @@ describe('diagnósticos', () => {
 describe('ganchos da parte 2 (not-implemented com loc)', () => {
   const cases: Array<[string, string, number, RegExp, string?]> = [
     [
-      'early return',
-      `export function A({ x }: { x: boolean }) {\n  if (x) return <p />\n  return <b />\n}`,
+      'const de lista fora de filho de elemento',
+      `export function A({ xs }: { xs: string[] }) {\n  const rows = xs.map((x) => <li>{x}</li>)\n  return <>{rows}</>\n}`,
+      3,
+      /`const` de lista/,
+    ],
+    [
+      'índice de lista desestruturado',
+      `export function A({ xs }: { xs: string[] }) {\n  return <ul>{xs.map((x, { length }) => <li>{x}</li>)}</ul>\n}`,
       2,
-      /early return/,
+      /índice de lista/,
     ],
     ['await', `export async function A() {\n  const u = await fetch('/x')\n  return <p>{u}</p>\n}`, 2, /await/],
     [
-      'condicional',
-      `export function A({ x }: { x: boolean }) {\n  return <div>{x && <p />}</div>\n}`,
-      2,
-      /condicional/,
-    ],
-    [
-      'lista',
-      `export function A({ xs }: { xs: string[] }) {\n  return <ul>{xs.map((x) => <li>{x}</li>)}</ul>\n}`,
-      2,
-      /lista/,
-    ],
-    [
-      'slot',
-      `import { Slot } from 'jotastic'\nimport { Card } from './c'\nexport function A() {\n  return <Card><Slot name="h"><b /></Slot></Card>\n}`,
+      // 18 §12 não diz para onde vai o lado sem `<Slot>` de um ternário (lacuna da parte 2b)
+      'filho comum em condicional com <Slot>',
+      `import { Slot } from 'jotastic'\nimport { Card } from './c'\nexport function A({ x }: { x: boolean }) {\n  return <Card>{x ? <Slot name="h"><b /></Slot> : <i />}</Card>\n}`,
       4,
-      /Slot/,
-    ],
-    ['use*', `export function useX(a: number) {\n  let n = a\n  return { n }\n}`, 1, /use\*/, 'useX.ts'],
-    [
-      'chamada use*',
-      `import { useX } from './x'\nexport function A() {\n  const r = useX(1)\n  return <p>{r.n}</p>\n}`,
-      3,
-      /use\*/,
+      /condicional com `<Slot>`/,
     ],
   ]
   for (const [name, code, line, msg, filename] of cases) {

@@ -8,12 +8,12 @@ import type { Analysis, Diagnostic } from '@jotastic/analyzer'
 import { BodyContext, ModuleContext, gid, type CompileOptions } from '../context'
 import { CompileError } from '../errors'
 import { emitDeclarations, finishParams, markTwoWay, rewriteBody, setupRules } from './bindings'
-import { checkBodyFlow } from './flow'
+import { checkBodyFlow, emitBodyFlow } from './flow'
 import { compileJSX, place, thunk } from './template'
 import { compileUseBody } from './use'
 
 /** APIs de `jotastic` reescritas para helpers do runtime; o import some quando todas as chamadas foram reescritas. */
-const REWRITTEN_APIS = new Set(['watch', 'on', 'external', 'inspect'])
+const REWRITTEN_APIS = new Set(['watch', 'on', 'external', 'inspect', 'useSlots'])
 
 /** Nomes usados pelo código do usuário (bindings de qualquer escopo + globais referenciados). */
 function collectNames(program: NodePath<t.Program>): Set<string> {
@@ -39,6 +39,7 @@ function compileComponentBody(ctx: BodyContext): void {
   if (!t.isBlockStatement(fn.body)) ctx.dataJo.add(fn.body)
   rewriteBody(ctx)
   emitDeclarations(ctx)
+  emitBodyFlow(ctx)
   finishParams(ctx)
 }
 
@@ -71,6 +72,29 @@ function compileAllJSX(mod: ModuleContext): void {
     })
     if (!found) return
   }
+}
+
+/** `import { Slot } from 'jotastic'` sem uso depois da compilação dos slots (18 §12: `<Slot>` some do código). */
+function unusedSlotImports(program: NodePath<t.Program>): NodePath<t.ImportSpecifier>[] {
+  const out: NodePath<t.ImportSpecifier>[] = []
+  for (const s of program.get('body')) {
+    if (!s.isImportDeclaration() || s.node.source.value !== 'jotastic') continue
+    for (const spec of s.get('specifiers')) {
+      if (!spec.isImportSpecifier()) continue
+      const imported = t.isIdentifier(spec.node.imported) ? spec.node.imported.name : spec.node.imported.value
+      if (imported !== 'Slot') continue
+      const local = spec.node.local.name
+      let used = false
+      for (const other of program.node.body) {
+        if (t.isImportDeclaration(other)) continue
+        t.traverseFast(other, (n) => {
+          if ((t.isIdentifier(n) || t.isJSXIdentifier(n)) && n.name === local) used = true
+        })
+      }
+      if (!used) out.push(spec)
+    }
+  }
+  return out
 }
 
 function runtimeImport(mod: ModuleContext): t.ImportDeclaration {
@@ -131,6 +155,7 @@ export function transformProgram(program: NodePath<t.Program>, analysis: Analysi
 
   compileAllJSX(mod)
 
+  removable.push(...unusedSlotImports(program))
   for (const spec of removable) {
     const decl = spec.parentPath as NodePath<t.ImportDeclaration>
     spec.remove()

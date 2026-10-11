@@ -14,8 +14,6 @@ export function Apis() {
   onMount(() => console.log('mounted', untrack(() => count)))
   onCleanup(() => console.log('bye'))
   return (
-    <canvas ref={el} onClick={() => chart.reset()}>
-      {count}
-    </canvas>
+    <canvas ref={el} onClick={() => chart.reset()}>{count}</canvas>
   )
 }
