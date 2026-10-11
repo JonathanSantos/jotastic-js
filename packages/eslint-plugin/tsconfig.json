@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "paths": { "@jotastic/analyzer": ["../analyzer/src/index.ts"] } },
+  "include": ["src", "test"]
+}

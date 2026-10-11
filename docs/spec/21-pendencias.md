@@ -147,3 +147,13 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | I-4 | `external` fora de corpo reativo | marcador `not-compiled` (alternativa: proxy lazy) |
 | I-5 | Typecheck dos exemplos usa `test/types/jotastic.d.ts`, não `src/index.ts` | divergência real × contrato não aparece; migrar quando estável |
 | B-1 | tsup DTS falhava com `import _JSX = JSX` em `jsx-runtime.d.ts` | `public-types.ts` importa `jotastic/jsx-runtime` (self-reference) e o tsup o marca como external |
+
+## ESLint plugin (passo 8)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| E-1 | 13 pede `prefer-const` desligado "para corpos reativos"; flat config só filtra por arquivo | desligado em todo `.ts/.tsx` coberto |
+| E-2 | Fix de `state-read-in-setup` gera `watch(() => …)` sem importar `watch` | assim (vem do analyzer) |
+| E-3 | `recommended` impõe `@typescript-eslint/parser` (dep direta) | assim |
+| E-4 | Hints viram `'warn'` (aparecem também na CLI/CI) | assim |
+| E-5 | URL de docs das regras aponta para repositório hipotético `jotastic/jotastic` | trocar quando houver repo |
