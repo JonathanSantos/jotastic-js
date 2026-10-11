@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "counter",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "examples/counter", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    }
+  ]
+}

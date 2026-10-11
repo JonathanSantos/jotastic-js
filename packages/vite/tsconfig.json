@@ -1,1 +1,6 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src", "test"] }
+{
+  "extends": "../../tsconfig.base.json",
+  // `@jotastic/compiler` e `@jotastic/analyzer` resolvem pelos `dist` do workspace (rode `npm run build` neles antes).
+  "include": ["src", "test"],
+  "exclude": ["test/fixtures"]
+}

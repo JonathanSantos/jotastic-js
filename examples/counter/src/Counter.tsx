@@ -1,5 +1,3 @@
-import { mount } from 'jotastic'
-
 // Reatividade básica. Sem useState, useMemo, useCallback.
 export function Counter({ label = 'Contador', step = 1 }: { label?: string; step?: number }) {
   let count = 0                       // estado
@@ -22,8 +20,6 @@ export function Counter({ label = 'Contador', step = 1 }: { label?: string; step
     </section>
   )
 }
-
-mount(<Counter step={5} />, '#app')
 
 // O que acontece ao clicar em "+5":
 //   count.set(5) → text "{count}" atualiza, memo `double` recalcula → text "{double}" atualiza,

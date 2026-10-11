@@ -4,8 +4,28 @@
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "dependencies": { "@jotastic/compiler": "0.0.0" }, "peerDependencies": { "vite": ">=5" }, "devDependencies": { "vite": "^5.4.0" },
-  "scripts": { "build": "tsup", "test": "vitest run", "typecheck": "tsc -p ." }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@jotastic/compiler": "0.0.0",
+    "@jotastic/analyzer": "0.0.0"
+  },
+  "peerDependencies": {
+    "vite": ">=5"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  }
 }

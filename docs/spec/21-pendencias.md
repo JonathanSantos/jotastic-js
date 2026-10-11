@@ -171,3 +171,12 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | K-7 | `external` em dev: completa args ausentes com `undefined` para `dev` ficar na 4ª posição | assim |
 | K-8 | Nome de helper colidindo com variável do usuário | `rest as _rest2` |
 | K-9 | Modo plugin Babel gera aspas duplas; `compile()` gera simples | assim |
+
+## Vite e tamanho (passo 6)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| V-1 | `DEV` sempre `true` no bundle do browser (`typeof process` não é substituído pelo Vite); regra 5 do guia pede exports condicionais `development`/`default` | a fazer |
+| V-2 | Counter: **6813 B brotli** (limite 3 KB); com `DEV=false` forçado, 5673 B — proxy/arrayMethods entram via `signal`/`memo`/`state`; helpers `__publicField` do target padrão do Vite | a fazer (tree-shaking do runtime, `build.target: 'es2022'`) |
+| V-3 | 19 pede `size.test.ts` | feito como `scripts/size.mjs` (`npm run size`) |
+| V-4 | Plugin Vite: `.ts` só compila se uma regex barata acha declaração `use*`; `autoImport` e `hmr.preserveState` não implementados; `devtools` só flag | assim |
