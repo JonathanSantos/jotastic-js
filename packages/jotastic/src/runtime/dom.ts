@@ -39,8 +39,11 @@ function isNode(v: unknown): v is Node {
   return typeof v === 'object' && v !== null && typeof (v as Node).nodeType === 'number'
 }
 
-/** Normaliza um valor renderizável em uma lista plana de strings e nós. Funções são chamadas (accessors aninhados). */
-function collect(v: unknown, out: (string | Node)[]): void {
+/**
+ * Interno (também usado por `flow.ts`): normaliza um valor renderizável em uma lista plana de strings e nós.
+ * Funções são chamadas (accessors aninhados).
+ */
+export function collect(v: unknown, out: (string | Node)[]): void {
   if (v == null || typeof v === 'boolean') return
   if (typeof v === 'function') return collect(v(), out)
   if (Array.isArray(v)) {
@@ -56,7 +59,8 @@ function collect(v: unknown, out: (string | Node)[]): void {
   out.push(String(v))
 }
 
-function hasFunction(v: unknown): boolean {
+/** Interno (também usado por `flow.ts`): o valor contém accessor (precisa de efeito)? */
+export function hasFunction(v: unknown): boolean {
   if (typeof v === 'function') return true
   if (Array.isArray(v)) for (const x of v) if (hasFunction(x)) return true
   return false

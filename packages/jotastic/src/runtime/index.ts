@@ -48,4 +48,5 @@ export {
   type StyleValue,
 } from './dom'
 export { createRoot, type RootOptions } from './root'
+export { component, keyed, branches, list, children, slots, SLOTS, portal, type Rendered, type Slots } from './flow'
 export { reactive, raw, isReactive, toReactive, readonly, shallowEqual } from './proxy'

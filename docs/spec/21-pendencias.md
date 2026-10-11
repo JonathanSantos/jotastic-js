@@ -102,3 +102,15 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | A-9 | `watch-without-reads` só dispara se o callback não referencia nenhum binding não-global (evita falso positivo com stores) | assim |
 | A-10 | `state-read-in-setup` dispara no exemplo oficial 11-tabs (`tabs.register(id)`) | talvez exceção para `useContext` |
 | A-11 | Exemplos que não parseiam no Babel: 06-async e 12-react-vs (import `api` + `declare const api` → "Duplicate declaration"); 05-styling (`extends JSX.IntrinsicElements['button']`) | testes contornam |
+
+## Fluxo (passo 3)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| L-1 | **Dados velhos no item**: chave padrão `id` preserva a linha ao reatribuir o array com objetos novos (F8), mas `render(item)` capturou o objeto antigo. Ex.: `users = await refetch()` com mesmos ids → nós preservados, bindings leem dados antigos | assim (contrato passa `item` direto). Decidir: item como accessor/signal, recriar quando a referência muda, ou reconcile (fase 2, D24) |
+| L-2 | `list:recreated` ao esvaziar a lista ("Limpar concluídas") | só emite se a lista nova tem ≥ 1 item |
+| L-3 | Chave duplicada sem ID em 12 | `list-duplicate-key` |
+| L-4 | Erro dentro de `render` de branch/item/portal | `handleError(owner, e, 'setup')`, conteúdo null |
+| L-5 | Mover o último item para o início move n−1 nós | LIS pós-MVP |
+| L-6 | `children()` cria os nós ao ser chamado (inclusive por `slots`): perde a preguiça prometida em 02 | assim |
+| L-7 | `Rendered` rejeita arrays mistos (`[component(…), branches(…)]`), como T-1 | cast nos testes |

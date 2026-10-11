@@ -419,6 +419,11 @@ export function isTracking(): boolean {
   return currentObserver !== null
 }
 
+/** Interno (para testes): quantos observadores um signal/memo tem agora. */
+export function observerCount(s: Signal<unknown> | Memo<unknown>): number {
+  return (s as unknown as { observers: Set<unknown> }).observers.size
+}
+
 // ─── Scheduler ───────────────────────────────────────────────────────────────
 
 /** Fila ordenada por id. Inserções quase sempre chegam em ordem crescente (append); fora de ordem, busca binária. */
