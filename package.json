@@ -11,7 +11,8 @@
     "packages/devtools",
     "packages/eslint-plugin",
     "packages/create-jotastic",
-    "examples/*"
+    "examples/*",
+    "bench"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -19,7 +20,7 @@
     "test:watch": "vitest",
     "dev": "npm run dev -w examples/counter",
     "size": "npm run size --workspaces --if-present",
-    "bench": "echo 'bench: passo 6'",
+    "bench": "npm run bench -w bench --",
     "lint": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

@@ -241,3 +241,16 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | H-6 | Componentes não exportados não são registrados (trocados só quando o pai exportado remonta) | assim |
 | X-11 | `examples/async`: **8911 B brotli** (~7 KB de runtime: resource, continuation, Boundary, list, proxy); 19 não define limite para esse cenário | limite informativo provisório 9 KB |
 | X-12 | Analyzer avisa no próprio exemplo oficial 06-async: `continuation-state-resets` em `let onlyPublished` (intencional) e `prefer-key-in-list` em `results.map` | mantidos |
+
+## Benchmark (passo 6)
+
+`npm run bench` (Chrome do sistema, mediana de 10). Jotastic vs Solid: create 1k 1.12×, replace 1k 1.32×, update 10th 1.20×, **select 3.8×**, **swap 8.5×**, remove 1.08×, create 10k 1.05–1.13×, append 1.22×, clear 1.41×. Limiar +10% falha em 8/9.
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| G-1 | Swap rows: `list()` sem LIS move ~997 `<tr>` (Solid move 2) | LIS (previsto "pós-MVP" no contrato) |
+| G-2 | Select: um efeito `classList` por linha → 1000 efeitos por seleção; Solid usa `createSelector` | sem equivalente no contrato; decidir se entra API/otimização de compilador |
+| G-3 | Clear/replace: remoção nó a nó; Solid usa `textContent = ''` quando a lista esvazia e é o único conteúdo | fast path |
+| G-4 | Append: `push` via proxy + `Array.from` + passe completo de chaves | otimizar |
+| G-5 | **D29 (delegação)**: sem listeners por linha, create 10k melhora ~7% (< 10%); `add/removeEventListener` = 1,6% do profile | **delegação não se justifica** |
+| G-6 | Ruído: Solid create 10k varia 8% entre execuções (~ o limiar) | limiar instável em CI; mais runs ou margem em ms |

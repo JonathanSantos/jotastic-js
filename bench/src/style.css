@@ -1,0 +1,53 @@
+/* Subconjunto do bootstrap usado pelo js-framework-benchmark: layout real das linhas sem CSS externo. */
+body {
+  font-family: sans-serif;
+  font-size: 14px;
+  margin: 0;
+}
+.container {
+  padding: 0 15px;
+}
+.jumbotron {
+  padding: 16px;
+  background: #eee;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+}
+.col-md-6 {
+  width: 50%;
+}
+.col-sm-6 {
+  width: 50%;
+  box-sizing: border-box;
+  padding: 2px;
+}
+.btn {
+  display: block;
+  width: 100%;
+  padding: 6px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table td {
+  padding: 4px 8px;
+  border-top: 1px solid #ddd;
+}
+.table-striped tr:nth-child(odd) {
+  background: #f9f9f9;
+}
+.danger {
+  background: #f2dede !important;
+}
+.col-md-1 {
+  width: 8%;
+}
+.col-md-4 {
+  width: 33%;
+}
+.preloadicon {
+  display: none;
+}
