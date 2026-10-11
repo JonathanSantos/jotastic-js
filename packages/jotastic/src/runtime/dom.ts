@@ -5,6 +5,7 @@
 // num efeito. `spread` reusa os mesmos appliers, um por chave.
 
 import { emitDomWrite } from './devtools'
+import { DEV } from './env'
 import { getOwner, handleError, registerDisposable, runWithOwner, type Owner } from './owner'
 import { effect, signal, untrack } from './reactive'
 
@@ -69,10 +70,12 @@ export function hasFunction(v: unknown): boolean {
 /** Interno: um intervalo de conteúdo dinâmico em `parent`, antes de `marker` (ou no fim, se null). */
 export class Slot {
   current: Node[] = []
-  constructor(
-    readonly parent: Node,
-    readonly marker: Node | null,
-  ) {}
+  declare readonly parent: Node
+  declare readonly marker: Node | null
+  constructor(parent: Node, marker: Node | null) {
+    this.parent = parent
+    this.marker = marker
+  }
 
   apply(value: unknown): void {
     const items: (string | Node)[] = []
@@ -118,7 +121,7 @@ export class Slot {
     for (let i = next.length - 1; i >= 0; i--) {
       const n = next[i]!
       if (n.parentNode !== parent || n.nextSibling !== ref) {
-        const moved = n.parentNode === parent
+        const moved = DEV && n.parentNode === parent
         parent.insertBefore(n, ref)
         emitDomWrite(n, moved ? 'move' : 'insert')
       }

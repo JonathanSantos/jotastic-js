@@ -183,14 +183,11 @@ export function handleError(owner: Owner | null, error: unknown, phase: ErrorPha
       }
     }
   }
-  const report = (handledBy: 'boundary' | 'root' | 'console') => {
-    if (!DEV) return
-    const hook = devtoolsHook()
-    if (hook) hook.emit({ type: 'error', phase, owner: owner ? owner.id : 0, error, handledBy })
-  }
-
   for (let b = owner ? owner.boundary : null; b; b = b.owner.parent ? b.owner.parent.boundary : null) {
-    if (b.catch(error, info)) return report('boundary')
+    if (b.catch(error, info)) {
+      if (DEV) reportError(owner, error, phase, 'boundary')
+      return
+    }
   }
 
   let root: OwnerImpl | null = null
@@ -201,7 +198,7 @@ export function handleError(owner: Owner | null, error: unknown, phase: ErrorPha
     }
   }
   if (root && root.onError) {
-    report('root')
+    if (DEV) reportError(owner, error, phase, 'root')
     try {
       root.onError(error, info)
     } catch (e) {
@@ -210,8 +207,20 @@ export function handleError(owner: Owner | null, error: unknown, phase: ErrorPha
     return
   }
 
-  report('console')
+  if (DEV) reportError(owner, error, phase, 'console')
   if (rethrowUnhandled) throw error
-  if (info.loc) console.error(error, `(${info.loc})`)
+  // `info.loc` só existe em dev.
+  if (DEV && info.loc) console.error(error, `(${info.loc})`)
   else console.error(error)
+}
+
+/** Dev: evento `error` do devtools com quem tratou. */
+function reportError(
+  owner: Owner | null,
+  error: unknown,
+  phase: ErrorPhase,
+  handledBy: 'boundary' | 'root' | 'console',
+): void {
+  const hook = devtoolsHook()
+  if (hook) hook.emit({ type: 'error', phase, owner: owner ? owner.id : 0, error, handledBy })
 }

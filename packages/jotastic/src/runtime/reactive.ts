@@ -18,7 +18,8 @@ import {
   type Dispose,
   type Owner,
 } from './owner'
-import { readonly, shallowEqual, toReactive } from './proxy'
+import { readonly, toReactive } from './proxy'
+import { shallowEqual } from './shallow'
 
 export interface Signal<T> {
   get(): T
@@ -96,10 +97,13 @@ function resolveCheck(c: Computation): void {
 class SignalNode<T> implements Signal<T> {
   readonly id = nextId()
   observers = new Set<Computation>()
-  constructor(
-    public value: T,
-    private wrap: ((v: T) => T) | null,
-  ) {}
+  // `declare` + atribuição no construtor (em vez de parameter properties): não emite declarações de campo repetidas.
+  declare value: T
+  declare private wrap: ((v: T) => T) | null
+  constructor(value: T, wrap: ((v: T) => T) | null) {
+    this.value = value
+    this.wrap = wrap
+  }
 
   get(): T {
     track(this)
@@ -171,14 +175,24 @@ class MemoNode<T> implements Memo<T> {
   /** `true` se a primeira execução não leu nenhuma fonte: o valor é fixo e `fn` foi liberada. */
   constant = false
   runs = 0
-  private warnedInstance = false
+  /** Dev: já avisou `derived-recreates-instance`. */
+  declare private warnedInstance?: boolean
+  declare private fn: (() => T) | null
+  declare private equals: ((a: T, b: T) => boolean) | false
+  declare readonly owner: Owner | null
+  declare readonly dev: DevMeta | undefined
 
   constructor(
-    private fn: (() => T) | null,
-    private equals: ((a: T, b: T) => boolean) | false,
-    readonly owner: Owner | null,
-    readonly dev: DevMeta | undefined,
-  ) {}
+    fn: (() => T) | null,
+    equals: ((a: T, b: T) => boolean) | false,
+    owner: Owner | null,
+    dev: DevMeta | undefined,
+  ) {
+    this.fn = fn
+    this.equals = equals
+    this.owner = owner
+    this.dev = dev
+  }
 
   get(): T {
     if (!this.constant) {
@@ -306,12 +320,15 @@ class EffectNode {
   /** Loop guard: flush em que `runs` foi contado. */
   stamp = 0
   runs = 0
+  declare private fn: () => void | Cleanup
+  declare readonly owner: Owner | null
+  declare readonly kind: 'render' | 'user'
 
-  constructor(
-    private fn: () => void | Cleanup,
-    readonly owner: Owner | null,
-    readonly kind: 'render' | 'user',
-  ) {}
+  constructor(fn: () => void | Cleanup, owner: Owner | null, kind: 'render' | 'user') {
+    this.fn = fn
+    this.owner = owner
+    this.kind = kind
+  }
 
   run(): void {
     this.state = CLEAN
@@ -426,7 +443,7 @@ export function observerCount(s: Signal<unknown> | Memo<unknown>): number {
 
 // ─── Scheduler ───────────────────────────────────────────────────────────────
 
-/** Fila ordenada por id. Inserções quase sempre chegam em ordem crescente (append); fora de ordem, busca binária. */
+/** Fila ordenada por id. Inserções quase sempre chegam em ordem crescente (append). */
 class Queue {
   private items: (EffectNode | undefined)[] = []
   private head = 0
@@ -436,19 +453,11 @@ class Queue {
   }
 
   push(e: EffectNode): void {
+    // Varre do fim: em ordem é O(1); fora de ordem o custo é o do `splice`, que já é linear.
     const a = this.items
-    if (a.length === this.head || a[a.length - 1]!.id < e.id) {
-      a.push(e)
-      return
-    }
-    let lo = this.head
-    let hi = a.length
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (a[mid]!.id < e.id) lo = mid + 1
-      else hi = mid
-    }
-    a.splice(lo, 0, e)
+    let i = a.length
+    while (i > this.head && a[i - 1]!.id > e.id) i--
+    a.splice(i, 0, e)
   }
 
   shift(): EffectNode | undefined {
@@ -528,7 +537,7 @@ export function flush(): void {
         e.state = CLEAN
         handleError(
           e.owner,
-          jotasticError('effect-loop', `efeito executou ${LOOP_LIMIT} vezes no mesmo flush`),
+          jotasticError('effect-loop', DEV ? `efeito executou ${LOOP_LIMIT} vezes no mesmo flush` : ''),
           'effect',
         )
         continue

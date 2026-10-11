@@ -5,13 +5,34 @@
   "license": "MIT",
   "sideEffects": false,
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./runtime": { "types": "./dist/runtime.d.ts", "default": "./dist/runtime.js" },
-    "./store": { "types": "./dist/store.d.ts", "default": "./dist/store.js" },
-    "./fetch": { "types": "./dist/fetch.d.ts", "default": "./dist/fetch.js" },
-    "./jsx-runtime": { "types": "./src/jsx-runtime.d.ts" }
+    ".": {
+      "types": "./dist/prod/index.d.ts",
+      "development": "./dist/dev/index.js",
+      "default": "./dist/prod/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/prod/runtime.d.ts",
+      "development": "./dist/dev/runtime.js",
+      "default": "./dist/prod/runtime.js"
+    },
+    "./store": {
+      "types": "./dist/prod/store.d.ts",
+      "development": "./dist/dev/store.js",
+      "default": "./dist/prod/store.js"
+    },
+    "./fetch": {
+      "types": "./dist/prod/fetch.d.ts",
+      "development": "./dist/dev/fetch.js",
+      "default": "./dist/prod/fetch.js"
+    },
+    "./jsx-runtime": {
+      "types": "./src/jsx-runtime.d.ts"
+    }
   },
-  "files": ["dist", "src/jsx-runtime.d.ts"],
+  "files": [
+    "dist",
+    "src/jsx-runtime.d.ts"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",

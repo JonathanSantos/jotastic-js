@@ -176,8 +176,8 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 
 | # | Caso concreto | Provisório |
 |---|---|---|
-| V-1 | `DEV` sempre `true` no bundle do browser (`typeof process` não é substituído pelo Vite); regra 5 do guia pede exports condicionais `development`/`default` | a fazer |
-| V-2 | Counter: **6813 B brotli** (limite 3 KB); com `DEV=false` forçado, 5673 B — proxy/arrayMethods entram via `signal`/`memo`/`state`; helpers `__publicField` do target padrão do Vite | a fazer (tree-shaking do runtime, `build.target: 'es2022'`) |
+| V-1 | `DEV` sempre `true` no bundle do browser (`typeof process` não é substituído pelo Vite); regra 5 do guia pede exports condicionais `development`/`default` | **feito**: tsup gera `dist/dev` (`__DEV__=true`) e `dist/prod`; exports `development`/`default` |
+| V-2 | Counter: **6813 B brotli** (limite 3 KB); com `DEV=false` forçado, 5673 B — proxy/arrayMethods entram via `signal`/`memo`/`state`; helpers `__publicField` do target padrão do Vite | **parcial**: prod 3335 B (dev 6422 B). Limite ajustado provisoriamente para 3,5 KB (19 permite até o M8). Para chegar a 3 KB: helper de texto escalar (`text(node, read)`, ~200 B) no lugar do `insert` genérico — exige API nova no contrato, decisão pendente |
 | V-3 | 19 pede `size.test.ts` | feito como `scripts/size.mjs` (`npm run size`) |
 | V-4 | Plugin Vite: `.ts` só compila se uma regex barata acha declaração `use*`; `autoImport` e `hmr.preserveState` não implementados; `devtools` só flag | assim |
 

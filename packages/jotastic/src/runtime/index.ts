@@ -49,5 +49,6 @@ export {
 } from './dom'
 export { createRoot, type RootOptions } from './root'
 export { component, keyed, branches, list, children, slots, SLOTS, portal, type Rendered, type Slots } from './flow'
-export { reactive, raw, isReactive, toReactive, readonly, shallowEqual } from './proxy'
+export { reactive, raw, isReactive, toReactive, readonly } from './proxy'
+export { shallowEqual } from './shallow'
 export { resource, continuation, boundary, type Resource, type BoundaryProps } from './async'

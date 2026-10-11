@@ -8,7 +8,7 @@
     "dev": "vite",
     "prebuild": "npm run deps",
     "build": "vite build",
-    "size": "npm run build && node ../../scripts/size.mjs dist 3072 counter",
+    "size": "npm run build && node ../../scripts/size.mjs dist 3584 counter",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

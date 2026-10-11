@@ -1,6 +1,8 @@
-import { defineConfig } from 'tsup'
+import { defineConfig, type Options } from 'tsup'
 
-export default defineConfig({
+// Dois builds (regra 5 do guia, 21-pendencias V-1): `dist/dev` (`__DEV__ = true`) e `dist/prod` (`__DEV__ = false`).
+// `package.json#exports` escolhe pela condição `development` (dev) / `default` (prod). Os tipos saem no de prod.
+const base: Options = {
   entry: {
     index: 'src/index.ts',
     runtime: 'src/runtime/index.ts',
@@ -8,8 +10,15 @@ export default defineConfig({
     fetch: 'src/fetch.ts',
   },
   format: ['esm'],
-  dts: true,
   splitting: true,
   clean: true,
   external: ['jotastic/jsx-runtime'],
-})
+}
+
+export default defineConfig([
+  { ...base, outDir: 'dist/dev', define: { __DEV__: 'true' } },
+  // Prod: `minifySyntax` faz o esbuild inlinar `DEV` como literal `false` em todo uso (também entre módulos) e dobrar
+  // os ramos de dev; sem isso o bundler do usuário vê só `var DEV = false` e nem sempre elimina (ternários em
+  // argumentos sobrevivem ao Rollup e ao minificador do Vite). Nomes e espaços continuam legíveis.
+  { ...base, outDir: 'dist/prod', define: { __DEV__: 'false' }, minifySyntax: true, dts: true },
+])
