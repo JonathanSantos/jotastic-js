@@ -135,7 +135,7 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | C-4 | compiled/02 não emite `autofocus()` no input raiz (coerente com 18 §5.6) → montado pelo runtime, sem foco | assim |
 | C-5 | **Readonly de derivado (P11)** profundo bloqueava `todo.done = v` em itens vindos de `visible` (02-todos) | `derived-mutated` só protege objetos criados pelo derivado; estado reativo aninhado passa. Readonly de store continua profundo |
 | Q-5 | `@jotastic/test`: trocar `__JOTASTIC_DEVTOOLS__` depois da instalação → reinstala por cima e conta em dobro | assim |
-| H-1 | happy-dom 15: `form.nextSibling` é `null` (Proxy) | contorno em `packages/jotastic/test/setup/happy-dom-form.ts`; happy-dom 20 corrige → atualizar e remover |
+| H-1 | happy-dom 15: `form.nextSibling` é `null` (Proxy) | **resolvido**: happy-dom 20; contorno removido (testes com `MutationObserver` + `await` passam a somar os registros entregues ao callback) |
 
 ## API pública (`index.ts`)
 

@@ -6,7 +6,5 @@ export default defineConfig({
   plugins: [jotastic()],
   test: {
     environment: 'happy-dom',
-    // H-1 (21-pendencias): `form.nextSibling` null no happy-dom 15.
-    setupFiles: ['../../packages/jotastic/test/setup/happy-dom-form.ts'],
   },
 })

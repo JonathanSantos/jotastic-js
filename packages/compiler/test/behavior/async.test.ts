@@ -56,7 +56,8 @@ describe('UserCard/Sidebar (examples/06-async.tsx compilado)', () => {
     expect(container.querySelector('.skeleton')).toBeNull()
     const article = container.querySelector('article')!
 
-    const mo = new MutationObserver(() => {})
+    const delivered: MutationRecord[] = []
+    const mo = new MutationObserver((rs) => delivered.push(...rs))
     mo.observe(container, { subtree: true, childList: true, characterData: true })
 
     userId.set('2')
@@ -75,7 +76,7 @@ describe('UserCard/Sidebar (examples/06-async.tsx compilado)', () => {
     expect(article.classList.contains('dimmed')).toBe(false)
     expect(container.querySelector('article')).toBe(article)
 
-    const records = mo.takeRecords()
+    const records = [...delivered, ...mo.takeRecords()] // happy-dom 20 entrega os registros no callback
     expect(records.filter((r) => r.type === 'characterData').length).toBe(1)
     expect(records.filter((r) => r.type === 'childList').length).toBe(0)
     mo.disconnect()
@@ -257,7 +258,9 @@ describe('diagnósticos de `await` (analyzer)', () => {
 
   test('await-in-try e await-in-branch impedem a emissão', () => {
     expect(
-      fail(`export async function A() {\n  try { const u = await f() } catch {}\n  return <p />\n}\ndeclare function f(): Promise<1>`),
+      fail(
+        `export async function A() {\n  try { const u = await f() } catch {}\n  return <p />\n}\ndeclare function f(): Promise<1>`,
+      ),
     ).toBe('await-in-try')
     expect(
       fail(
