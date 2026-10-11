@@ -76,3 +76,13 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | Q-2 | 13-tooling mostra `counts()` como `{ bindings, memos }`; 19 usa `{ effects, memos, writes }` | seguido o 19 |
 | Q-3 | Erro não tratado em flush assíncrono relança em microtask; `tick()` não rejeita | assim |
 | Q-4 | `counts().writes` não conta escritas do setup fora de efeitos | assim |
+
+## Store e fetch (passo 7, adiantado)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| S-1 | S4 ("cada `set` após `await` é um flush próprio") só é atingível com flush síncrono: dois `set` no mesmo microtask dividiriam o flush | ações e `set` fora de ação terminam com `flush()` síncrono (exceto dentro de outro batch/flush). Diverge de "DOM no microtask" para stores: `cart.add(x)` já atualiza o DOM ao retornar |
+| S-2 | `set` após `await` não é atribuível à ação (sem contexto async) | devtools emite `store:action` com `action: 'set'`; `$reset` como `'$reset'` |
+| S-3 | `get().x = 1` após `await` está fora da ação | avisa e não muda; só `set` funciona |
+| S-4 | `$snapshot()` tipado `S` | estado + valores dos getters, sem ações |
+| S-5 | `fetch` com `init.signal: null` | tratado como ausente (anexa o ambiente) |
