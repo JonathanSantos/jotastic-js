@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
-import { build, type Rollup } from 'vite'
+import { build, createServer, type Rollup } from 'vite'
 import { describe, expect, test, vi } from 'vitest'
-import jotastic, { codeFrame, shouldCompile } from '../src/index'
+import jotastic, { codeFrame, DEVTOOLS_URL, shouldCompile } from '../src/index'
 
 const COUNTER = `export function Counter() {
   let count: number = 0
@@ -106,5 +106,63 @@ describe('@jotastic/vite', () => {
     warn.mockRestore()
     const js = res.output.find((o) => o.type === 'chunk')!
     expect(js.type === 'chunk' && js.code).toMatch(/from "jotastic\/runtime"/)
+    // Build de produção: nada de devtools no HTML nem no bundle.
+    const html = res.output.find((o) => o.fileName === 'index.html')!
+    expect(html.type === 'asset' && String(html.source)).not.toContain('devtools')
+    expect(js.type === 'chunk' && js.code).not.toContain('installDevtools')
+  })
+
+  describe('devtools', () => {
+    function hooks(mode: 'serve' | 'build', options?: Parameters<typeof jotastic>[0]) {
+      const plugin = jotastic(options)
+      ;(plugin.configResolved as (c: unknown) => void)({ isProduction: mode === 'build', command: mode })
+      return {
+        html: () => (plugin.transformIndexHtml as () => unknown)(),
+        resolveId: (id: string) => (plugin.resolveId as (id: string) => unknown)(id),
+        load: (id: string) => (plugin.load as (id: string) => unknown)(id),
+      }
+    }
+
+    test('dev (padrão): injeta o script do devtools no head e serve o módulo virtual', () => {
+      const h = hooks('serve')
+      expect(h.html()).toEqual([
+        { tag: 'script', attrs: { type: 'module', src: DEVTOOLS_URL }, injectTo: 'head-prepend' },
+      ])
+      const id = h.resolveId(DEVTOOLS_URL) as string
+      expect(id).toMatch(/^\0/)
+      expect(h.load(id)).toBe(`import { installDevtools } from '@jotastic/devtools'\ninstallDevtools()\n`)
+    })
+
+    test('devtools: false em dev e qualquer valor em build de produção: nada é injetado', () => {
+      for (const h of [hooks('serve', { devtools: false }), hooks('build'), hooks('build', { devtools: true })]) {
+        expect(h.html()).toBeUndefined()
+        expect(h.resolveId(DEVTOOLS_URL)).toBeNull()
+      }
+    })
+
+    test('dev server: o HTML transformado carrega o devtools antes do app', async () => {
+      const server = await createServer({
+        root: fileURLToPath(new URL('./fixtures/app', import.meta.url)),
+        configFile: false,
+        logLevel: 'silent',
+        plugins: [jotastic()],
+        server: { middlewareMode: true, hmr: false },
+        optimizeDeps: { noDiscovery: true, include: [] },
+      })
+      try {
+        const out = await server.transformIndexHtml(
+          '/index.html',
+          '<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>',
+        )
+        const at = out.indexOf(`src="${DEVTOOLS_URL}"`)
+        expect(at).toBeGreaterThan(-1)
+        expect(at).toBeLessThan(out.indexOf('/src/main.ts'))
+        const resolved = await server.pluginContainer.resolveId(DEVTOOLS_URL)
+        const loaded = await server.pluginContainer.load(resolved!.id)
+        expect(String(typeof loaded === 'string' ? loaded : loaded?.code)).toContain('installDevtools()')
+      } finally {
+        await server.close()
+      }
+    })
   })
 })

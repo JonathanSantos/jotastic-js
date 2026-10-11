@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Typecheck contra o fonte (o dist de `jotastic` pode não existir), espelhando o alias do vitest.shared.ts.
+    "paths": { "jotastic/runtime": ["../jotastic/src/runtime/index.ts"] }
+  },
+  "include": ["src", "test"]
+}

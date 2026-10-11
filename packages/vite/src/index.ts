@@ -5,6 +5,8 @@
  * - `.tsx`/`.jsx` sempre passam pelo compilador; `.ts` só se declara um `use*` (único corpo reativo possível
  *   sem JSX, 18 §1). O resto segue intacto para o esbuild.
  * - `dev` = `!config.isProduction` (serve ou `--mode development`).
+ * - `devtools` (padrão: ligado em dev): no dev server injeta no HTML um `<script type="module">` que carrega o módulo
+ *   virtual `/@jotastic/devtools`, que chama `installDevtools()` de `@jotastic/devtools`. Em prod não injeta nada.
  * - `CompileError` vira erro do Rollup/Vite com `loc` e `frame` (o overlay mostra a mensagem do diagnóstico);
  *   avisos do analyzer vão para `this.warn`.
  */
@@ -13,13 +15,21 @@ import { compile, CompileError } from '@jotastic/compiler'
 import { formatDiagnostic } from '@jotastic/analyzer'
 
 export interface JotasticPluginOptions {
-  /** Devtools em dev (padrão: ligado em dev). Por ora só a flag: o pacote `@jotastic/devtools` ainda não existe. */
+  /**
+   * Devtools em dev (padrão: ligado em dev): injeta `installDevtools()` de `@jotastic/devtools` no HTML (o app precisa
+   * ter `@jotastic/devtools` instalado). Ignorado em `vite build`.
+   */
   devtools?: boolean
   /** Importa `watch`, `on`, `external`, `onMount`, `inspect` automaticamente. Desligado; ainda não implementado. */
   autoImport?: boolean
   /** HMR (passo 8). `preserveState` ainda não implementado. */
   hmr?: { preserveState?: boolean }
 }
+
+/** URL do módulo virtual que instala o devtools (injetado no HTML em dev). */
+export const DEVTOOLS_URL = '/@jotastic/devtools'
+const DEVTOOLS_ID = '\0jotastic:devtools'
+const DEVTOOLS_CODE = `import { installDevtools } from '@jotastic/devtools'\ninstallDevtools()\n`
 
 const JSX_FILE = /\.[jt]sx$/
 const SCRIPT_FILE = /\.[mc]?ts$/
@@ -52,6 +62,7 @@ export function codeFrame(code: string, line: number, column: number): string {
 
 export default function jotastic(options: JotasticPluginOptions = {}): Plugin {
   let dev = true
+  let devtools = false
 
   return {
     name: 'jotastic',
@@ -64,8 +75,25 @@ export default function jotastic(options: JotasticPluginOptions = {}): Plugin {
 
     configResolved(config: ResolvedConfig) {
       dev = !config.isProduction
-      // `devtools` (padrão: dev) fica registrado para o passo 8; `autoImport` e `hmr.preserveState` ainda não existem.
-      void (options.devtools ?? dev)
+      // Devtools só no dev server, mesmo com `devtools: true` explícito: nunca entra num bundle de `vite build`
+      // (o runtime de prod nem emite eventos). `autoImport` e `hmr.preserveState` ainda não existem.
+      devtools = config.command === 'serve' && dev && (options.devtools ?? true)
+    },
+
+    resolveId(id) {
+      if (devtools && id === DEVTOOLS_URL) return DEVTOOLS_ID
+      return null
+    },
+
+    load(id) {
+      if (id === DEVTOOLS_ID) return DEVTOOLS_CODE
+      return null
+    },
+
+    transformIndexHtml() {
+      if (!devtools) return
+      // `head-prepend`: scripts de módulo rodam em ordem; o hook fica instalado antes do app montar.
+      return [{ tag: 'script', attrs: { type: 'module', src: DEVTOOLS_URL }, injectTo: 'head-prepend' }]
     },
 
     transform(code, id) {

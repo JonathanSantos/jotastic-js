@@ -202,3 +202,12 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | K-13 | Mini-corpo do item de lista classificado pelo compilador (analyzer não classifica callbacks); `({ name }) => <li>{name}</li>` lê 1× (ver L-1); prelude de caso não classificado | assim |
 | K-14 | Filho único condicional de componente: `get children() { return x && <p/> }` sem `branches` | a corrigir (usar `childValue`) |
 | K-15 | compiled/02 omite `!!` em `todo.editing`; omitido só quando a condição é booleana pela sintaxe | allowlist |
+
+## Devtools (flash + contadores)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| W-1 | Injeção do devtools pelo plugin Vite: "dev" = `!isProduction`, mas no vitest `NODE_ENV=test` deixa `isProduction` falso e o `vite build` injetava | exige também `command === 'serve'`; `vite build --mode development` não leva devtools |
+| W-2 | `@jotastic/devtools` não é dependência do `@jotastic/vite`; o app precisa instalá-lo | assim |
+| W-3 | `flush:end` não traz contagem de memos | contados por `memo:run` desde `flush:start` |
+| W-4 | Painel de Atualizações, Alt+clique, lista de `inspect` | não feitos |

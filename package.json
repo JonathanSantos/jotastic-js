@@ -8,6 +8,7 @@
     "packages/compiler",
     "packages/vite",
     "packages/test",
+    "packages/devtools",
     "packages/eslint-plugin",
     "examples/*"
   ],

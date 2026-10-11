@@ -11,4 +11,5 @@ export const alias = [
   { find: /^@jotastic\/analyzer$/, replacement: src('analyzer/src/index.ts') },
   { find: /^@jotastic\/compiler$/, replacement: src('compiler/src/index.ts') },
   { find: /^@jotastic\/test$/, replacement: src('test/src/index.ts') },
+  { find: /^@jotastic\/devtools$/, replacement: src('devtools/src/index.ts') },
 ]
