@@ -1,0 +1,12 @@
+[
+  {
+    "id": "on-change-on-input",
+    "level": "hint",
+    "loc": {
+      "line": 3,
+      "column": 30,
+      "endLine": 3,
+      "endColumn": 78
+    }
+  }
+]

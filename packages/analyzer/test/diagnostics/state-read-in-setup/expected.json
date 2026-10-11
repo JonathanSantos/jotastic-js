@@ -1,0 +1,16 @@
+[
+  {
+    "id": "state-read-in-setup",
+    "level": "warning",
+    "loc": {
+      "line": 3,
+      "column": 3,
+      "endLine": 3,
+      "endColumn": 21
+    },
+    "fix": {
+      "range": [78, 96],
+      "text": "watch(() => console.log(count))"
+    }
+  }
+]

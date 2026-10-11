@@ -1,0 +1,12 @@
+[
+  {
+    "id": "ref-before-mount",
+    "level": "error",
+    "loc": {
+      "line": 3,
+      "column": 15,
+      "endLine": 3,
+      "endColumn": 21
+    }
+  }
+]

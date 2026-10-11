@@ -1,0 +1,16 @@
+[
+  {
+    "id": "let-never-reassigned",
+    "level": "hint",
+    "loc": {
+      "line": 2,
+      "column": 3,
+      "endLine": 2,
+      "endColumn": 23
+    },
+    "fix": {
+      "range": [57, 60],
+      "text": "const"
+    }
+  }
+]

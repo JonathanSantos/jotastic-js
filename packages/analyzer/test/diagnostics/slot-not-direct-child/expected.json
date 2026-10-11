@@ -1,0 +1,12 @@
+[
+  {
+    "id": "slot-not-direct-child",
+    "level": "error",
+    "loc": {
+      "line": 7,
+      "column": 9,
+      "endLine": 7,
+      "endColumn": 29
+    }
+  }
+]

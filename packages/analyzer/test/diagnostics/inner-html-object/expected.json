@@ -1,0 +1,16 @@
+[
+  {
+    "id": "inner-html-object",
+    "level": "error",
+    "loc": {
+      "line": 2,
+      "column": 15,
+      "endLine": 2,
+      "endColumn": 57
+    },
+    "fix": {
+      "range": [65, 107],
+      "text": "innerHTML={html}"
+    }
+  }
+]

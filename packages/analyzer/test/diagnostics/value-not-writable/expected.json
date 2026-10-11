@@ -1,0 +1,12 @@
+[
+  {
+    "id": "value-not-writable",
+    "level": "hint",
+    "loc": {
+      "line": 2,
+      "column": 17,
+      "endLine": 2,
+      "endColumn": 30
+    }
+  }
+]

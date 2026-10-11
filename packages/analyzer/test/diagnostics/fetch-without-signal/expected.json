@@ -1,0 +1,12 @@
+[
+  {
+    "id": "fetch-without-signal",
+    "level": "hint",
+    "loc": {
+      "line": 2,
+      "column": 22,
+      "endLine": 2,
+      "endColumn": 47
+    }
+  }
+]

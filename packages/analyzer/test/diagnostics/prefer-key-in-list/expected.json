@@ -1,0 +1,12 @@
+[
+  {
+    "id": "prefer-key-in-list",
+    "level": "warning",
+    "loc": {
+      "line": 7,
+      "column": 10,
+      "endLine": 9,
+      "endColumn": 11
+    }
+  }
+]

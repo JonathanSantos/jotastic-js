@@ -1,0 +1,12 @@
+[
+  {
+    "id": "list-const-used-twice",
+    "level": "error",
+    "loc": {
+      "line": 6,
+      "column": 12,
+      "endLine": 6,
+      "endColumn": 16
+    }
+  }
+]

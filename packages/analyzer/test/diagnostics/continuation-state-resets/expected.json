@@ -1,0 +1,12 @@
+[
+  {
+    "id": "continuation-state-resets",
+    "level": "warning",
+    "loc": {
+      "line": 3,
+      "column": 7,
+      "endLine": 3,
+      "endColumn": 10
+    }
+  }
+]

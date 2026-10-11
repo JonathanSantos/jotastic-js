@@ -1,0 +1,12 @@
+[
+  {
+    "id": "watch-without-reads",
+    "level": "warning",
+    "loc": {
+      "line": 4,
+      "column": 3,
+      "endLine": 6,
+      "endColumn": 5
+    }
+  }
+]

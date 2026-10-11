@@ -1,0 +1,12 @@
+[
+  {
+    "id": "await-in-branch",
+    "level": "error",
+    "loc": {
+      "line": 3,
+      "column": 5,
+      "endLine": 3,
+      "endColumn": 23
+    }
+  }
+]

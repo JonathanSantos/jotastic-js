@@ -1,0 +1,12 @@
+[
+  {
+    "id": "return-in-loop-or-try",
+    "level": "error",
+    "loc": {
+      "line": 3,
+      "column": 16,
+      "endLine": 3,
+      "endColumn": 35
+    }
+  }
+]

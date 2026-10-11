@@ -1,0 +1,12 @@
+[
+  {
+    "id": "ref-non-optional-in-branch",
+    "level": "warning",
+    "loc": {
+      "line": 3,
+      "column": 61,
+      "endLine": 3,
+      "endColumn": 72
+    }
+  }
+]

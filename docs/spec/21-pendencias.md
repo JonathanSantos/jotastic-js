@@ -86,3 +86,19 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | S-3 | `get().x = 1` após `await` está fora da ação | avisa e não muda; só `set` funciona |
 | S-4 | `$snapshot()` tipado `S` | estado + valores dos getters, sem ações |
 | S-5 | `fetch` com `init.signal: null` | tratado como ausente (anexa o ambiente) |
+
+## Analyzer (passo 4)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| A-1 | **`signal` vs `state`**: 18 §3 exige todas as atribuições "provavelmente primitivas". Por ela, `filter = f` (02-todos), `error = e` (compiled/03), `let matches = mql.matches` (useMediaQuery), `tab = t` (compiled/04) são `state`, mas o compiled usa `signal`; e o compiled usa `state` para `data = d`, de forma idêntica a `error = e`. Nenhuma regra sintática reproduz o compiled | analyzer segue 18 §3 (`state`); semanticamente equivalente para primitivos. Decidir: ajustar a regra ou os snapshots |
+| A-2 | Contexto vivo não listado em 18 §2: objeto de retorno de `use*`; corpo de funções raiz referenciadas em contexto vivo (`{label()}`), transitivamente | tratados como vivos (senão `let` lido só por `label()` vira `plain`) |
+| A-3 | Two-way (`value={draft}` sem handler) | conta como escrita (evita `let-never-reassigned` falso); `select multiple` força `state` |
+| A-4 | Contrato: fix de `inner-html-object`/`state-read-in-setup` precisa do código-fonte | `AnalyzeOptions.code?` opcional; `topLevelJSX` aceita `JSXFragment` |
+| A-5 | Kind `'continuation'` nunca emitido (18 §3: mesma classificação; usa `flowIndex`); `branchIndex` = posição na cadeia if/else-if/switch; `else`/`default` → `{ kind: 'final' }`; `await` com declarador recebe `flowIndex` anterior | assim |
+| A-6 | `ParamInfo` sem campo da chave: `{ c: local }` registra só `local` | compilador lê a chave no nó |
+| A-7 | `loc` com coluna 1-based (como `Counter.tsx:5:7`) | ESLint subtrai 1 |
+| A-8 | `isProbablyPrimitive`: `a ?? 0` primitivo, `a \|\| {}` não; ternário exige os dois lados | assim |
+| A-9 | `watch-without-reads` só dispara se o callback não referencia nenhum binding não-global (evita falso positivo com stores) | assim |
+| A-10 | `state-read-in-setup` dispara no exemplo oficial 11-tabs (`tabs.register(id)`) | talvez exceção para `useContext` |
+| A-11 | Exemplos que não parseiam no Babel: 06-async e 12-react-vs (import `api` + `declare const api` → "Duplicate declaration"); 05-styling (`extends JSX.IntrinsicElements['button']`) | testes contornam |

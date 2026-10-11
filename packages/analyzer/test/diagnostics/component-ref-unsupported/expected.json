@@ -1,0 +1,12 @@
+[
+  {
+    "id": "component-ref-unsupported",
+    "level": "error",
+    "loc": {
+      "line": 3,
+      "column": 21,
+      "endLine": 3,
+      "endColumn": 32
+    }
+  }
+]

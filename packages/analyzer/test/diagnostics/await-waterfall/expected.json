@@ -1,0 +1,12 @@
+[
+  {
+    "id": "await-waterfall",
+    "level": "hint",
+    "loc": {
+      "line": 3,
+      "column": 15,
+      "endLine": 3,
+      "endColumn": 30
+    }
+  }
+]
