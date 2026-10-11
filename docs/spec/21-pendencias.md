@@ -191,3 +191,14 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | U-4 | Escrita em parâmetro de `use*` (`url = x`) | não reescrita |
 | U-5 | `useX(...xs)` | `not-implemented` |
 | U-6 | Snapshots 03/06: locs do compiled supõem um arquivo por função e alguns não batem com nenhuma versão do exemplo; 06 declara templates no meio do módulo; template estático `() => _tN()` vs `{ const _el = _tN(); return _el }` | allowlist explícita nos testes |
+
+## Compilador, parte 2a (fluxo e listas)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| K-10 | Texto só de espaço encostado em `{/* comentário */}` | não vira nó de texto (compiled/02 pressupõe; React manteria) |
+| K-11 | **Lista fora de filho de elemento intrínseco**: `<Card>{items.map(i => <Row/>)}</Card>`, fragmento, dentro de condicional | vira accessor comum (recria tudo, `i` número); `const rows` fora de posição de filho → `not-implemented` |
+| K-12 | Valor não-JSX dinâmico num caso: `{name \|\| <i>anon</i>}`, 18 §7 diz `() => a'` mas o render é untracked | emitido `() => () => a'` (accessor vivo) |
+| K-13 | Mini-corpo do item de lista classificado pelo compilador (analyzer não classifica callbacks); `({ name }) => <li>{name}</li>` lê 1× (ver L-1); prelude de caso não classificado | assim |
+| K-14 | Filho único condicional de componente: `get children() { return x && <p/> }` sem `branches` | a corrigir (usar `childValue`) |
+| K-15 | compiled/02 omite `!!` em `todo.editing`; omitido só quando a condição é booleana pela sintaxe | allowlist |
