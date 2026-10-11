@@ -114,3 +114,13 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | L-5 | Mover o último item para o início move n−1 nós | LIS pós-MVP |
 | L-6 | `children()` cria os nós ao ser chamado (inclusive por `slots`): perde a preguiça prometida em 02 | assim |
 | L-7 | `Rendered` rejeita arrays mistos (`[component(…), branches(…)]`), como T-1 | cast nos testes |
+
+## Async (passo 9, runtime)
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| Y-1 | `resource` cuja `fn` lança síncrono no meio do setup: boundary descarta os children enquanto o componente monta; continuações criadas depois ficam em owner descartado | funciona, deixa efeito órfão |
+| Y-2 | `await sleep()` (valor `undefined`) | continuação considera pronto por `loading === false && error === undefined`; `throw undefined` não é erro |
+| Y-3 | Descendente async novo depois do primeiro carregamento (branch troca para componente com `await`) | boundary volta a pending (segue o memo do contrato; 07 fala só em primeiro carregamento) |
+| Y-4 | `await`s aninhados: children entram e saem do DOM no mesmo flush | sem pintura intermediária, mas há mutações |
+| Y-5 | Erro síncrono de `fn` | fase `'async'` |

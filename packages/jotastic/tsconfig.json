@@ -1,1 +1,12 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src", "test"], "exclude": ["test/types"] }
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Typecheck dos testes contra o fonte (o dist pode não existir), espelhando o alias do vitest.shared.ts.
+    "paths": {
+      "jotastic/runtime": ["./src/runtime/index.ts"],
+      "@jotastic/test": ["../test/src/index.ts"]
+    }
+  },
+  "include": ["src", "test"],
+  "exclude": ["test/types"]
+}
