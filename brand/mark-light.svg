@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Jotastic"><title>Jotastic</title><rect width="128" height="128" rx="30" fill="#FBF7F2"/>
+<g transform="translate(-8 0)"><path d="M70 52 V92 Q70 112 48 112" fill="none" stroke="#16131B" stroke-width="15" stroke-linecap="round"/>
+<circle cx="70" cy="30" r="11" fill="#FF5B3A"/>
+<g stroke="#FFC94A" stroke-width="6" stroke-linecap="round">
+  <path d="M88 16 L95 9"/><path d="M93 30 H103"/><path d="M88 44 L95 51"/>
+</g></g></svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="580" height="140" viewBox="0 0 580 140" role="img" aria-label="Jotastic"><title>Jotastic</title><g transform="translate(0 4)"><rect width="128" height="128" rx="30" fill="#FBF7F2"/>
+<g transform="translate(-8 0)"><path d="M70 52 V92 Q70 112 48 112" fill="none" stroke="#16131B" stroke-width="15" stroke-linecap="round"/>
+<circle cx="70" cy="30" r="11" fill="#FF5B3A"/>
+<g stroke="#FFC94A" stroke-width="6" stroke-linecap="round">
+  <path d="M88 16 L95 9"/><path d="M93 30 H103"/><path d="M88 44 L95 51"/>
+</g></g></g><g transform="translate(160 6)">
+<g fill="none" stroke="#FBF7F2" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M20 44 V110 Q20 128 2 128"/>
+  <circle cx="62" cy="72" r="28"/>
+  <path d="M112 26 V86 Q112 100 126 100 H132 M100 48 H130"/>
+  <circle cx="170" cy="72" r="28"/><path d="M198 44 V100"/>
+  <path d="M258 52 Q252 44 238 44 Q218 44 218 58 Q218 70 238 72 Q260 74 260 87 Q260 100 238 100 Q222 100 216 92"/>
+  <path d="M284 26 V86 Q284 100 298 100 H304 M272 48 H302"/>
+  <path d="M326 44 V100"/>
+  <path d="M390 50.6 A28 28 0 1 0 390 93.4"/>
+</g>
+<circle cx="20" cy="22" r="9" fill="#FF5B3A"/>
+<circle cx="326" cy="22" r="9" fill="#FF5B3A"/>
+</g></svg>
