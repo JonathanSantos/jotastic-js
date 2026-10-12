@@ -268,11 +268,17 @@ O MVP tem **dezoito itens** de API e nenhuma sintaxe nova no JSX.
 <td align="center" width="25%"><h3>~3,4 KB</h3><sub>brotli, app Counter inteira em prod</sub></td>
 <td align="center" width="25%"><h3>0</h3><sub>dependências no runtime</sub></td>
 <td align="center" width="25%"><h3>1×</h3><sub>execuções do corpo de um componente</sub></td>
-<td align="center" width="25%"><h3>600+</h3><sub>testes de contrato, snapshot e comportamento</sub></td>
+<td align="center" width="25%"><h3>700+</h3><sub>testes de contrato, snapshot e comportamento</sub></td>
 </tr>
 </table>
 
-No **benchmark local** no formato do js-framework-benchmark, comparado com Solid no mesmo Chrome, *select row* fica em **0,70×** e *swap rows* em **1,0–1,1×**. *Create*, *append* e *clear* ainda estão de 10% a 50% acima e estão em otimização (`npm run bench`). A meta registrada na spec é ficar **≤ Solid + 10%** em tudo.
+No **benchmark local** no formato do js-framework-benchmark, comparado com Solid no mesmo Chrome (3 rodadas × 10 execuções, critério: falha se passar de +10% **e** de +2 ms em 2 de 3 rodadas):
+
+| create 1k | replace 1k | update 10th | select | swap | remove | create 10k | append 1k | clear |
+|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| 1,11× | **1,30×** ✗ | 1,14× | **0,86×** | 1,07× | 1,01× | **0,99×** | 1,09× | 1,22× |
+
+*Replace* ainda está em otimização (`npm run bench`). A meta registrada na spec é ficar dentro de Solid + 10%.
 
 <br>
 

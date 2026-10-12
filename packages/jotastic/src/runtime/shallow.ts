@@ -1,6 +1,7 @@
 // Comparação rasa (igualdade padrão do `memo`). Separada de `proxy.ts` para que `memo` não puxe o caminho do proxy.
 
-function isPlain(v: unknown): v is Record<PropertyKey, unknown> {
+/** Interno (também em `proxy.ts`): POJO (protótipo `Object.prototype` ou null). */
+export function isPlain(v: unknown): v is Record<PropertyKey, unknown> {
   if (typeof v !== 'object' || v === null) return false
   const proto = Object.getPrototypeOf(v)
   return proto === Object.prototype || proto === null

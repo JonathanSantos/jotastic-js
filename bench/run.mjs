@@ -2,14 +2,18 @@
 /**
  * Benchmark local no formato do js-framework-benchmark (keyed): Jotastic vs Solid (19 §Tamanho e benchmark).
  *
- * Uso: node run.mjs [--runs 10] [--warmup 5] [--save-baseline] [--only create1k,select] [--headed]
+ * Uso: node run.mjs [--runs 10] [--rounds 3] [--warmup 5] [--save-baseline] [--only create1k,select] [--headed]
  *
  * Os apps precisam estar buildados em dist/ (`npm run build`, feito pelo `prebench`). Cada amostra abre a página do
  * zero, faz o setup da operação (com warmup), e mede do clique até a próxima macrotarefa + layout forçado
  * (script + microtarefas + estilo + layout; pintura fica de fora). Mediana de N amostras, intercalando os dois frameworks.
  *
- * Saída: tabela no console, results/latest.json. Com --save-baseline grava results/solid-baseline.json.
- * Sai com código 1 se alguma operação do Jotastic for > +10% pior que o Solid medido na mesma execução.
+ * Critério (G-6): numa execução, uma operação falha se o Jotastic for > Solid + 10% **e** > Solid + 2 ms (mesma
+ * execução). São `--rounds` execuções completas (padrão 3); a operação falha se falhar em pelo menos 2 de 3
+ * (maioria: `floor(rounds / 2) + 1`). Com `--rounds 1` vale a execução única.
+ *
+ * Saída: tabela no console (razão por execução + veredito), results/latest.json. Com --save-baseline grava
+ * results/solid-baseline.json (mediana de todas as amostras do Solid). Sai com código 1 se alguma operação falhar.
  */
 import { createServer } from 'node:http'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -22,7 +26,9 @@ import { chromium } from 'playwright'
 const here = dirname(fileURLToPath(import.meta.url))
 const dist = join(here, 'dist')
 const resultsDir = join(here, 'results')
+/** Margem relativa e absoluta: falha só se passar das duas (G-6). */
 const THRESHOLD = 0.1
+const THRESHOLD_MS = 2
 
 // ---------- argumentos ----------
 const args = process.argv.slice(2)
@@ -32,6 +38,9 @@ const opt = (name, def) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : def
 }
 const RUNS = Number(opt('runs', 10))
+const ROUNDS = Math.max(1, Number(opt('rounds', 3)))
+/** Execuções em que a operação precisa falhar para falhar no total (2 de 3). */
+const NEEDED = Math.floor(ROUNDS / 2) + 1
 const WARMUP = Number(opt('warmup', 5))
 const only = opt('only', '').split(',').filter(Boolean)
 
@@ -240,25 +249,31 @@ async function main() {
   }
 
   const browserVersion = browser.version()
-  const results = {}
+  /** `rounds[r][op.id]` = { jotastic, solid, ratio, failed, samples } da execução r. */
+  const rounds = []
   try {
-    for (const op of OPS) {
-      const samples = { jotastic: [], solid: [] }
-      for (let i = 0; i < RUNS; i++) {
-        // alterna a ordem para não favorecer quem roda primeiro
-        const order = i % 2 ? ['solid', 'jotastic'] : ['jotastic', 'solid']
-        for (const fw of order) samples[fw].push(await sample(browser, base, fw, op))
+    for (let r = 0; r < ROUNDS; r++) {
+      if (ROUNDS > 1) process.stdout.write(`execução ${r + 1}/${ROUNDS}\n`)
+      const round = {}
+      for (const op of OPS) {
+        const samples = { jotastic: [], solid: [] }
+        for (let i = 0; i < RUNS; i++) {
+          // alterna a ordem para não favorecer quem roda primeiro
+          const order = i % 2 ? ['solid', 'jotastic'] : ['jotastic', 'solid']
+          for (const fw of order) samples[fw].push(await sample(browser, base, fw, op))
+        }
+        const j = median(samples.jotastic)
+        const s = median(samples.solid)
+        round[op.id] = {
+          jotastic: r2(j),
+          solid: r2(s),
+          ratio: r2(j / s),
+          failed: j > s * (1 + THRESHOLD) && j - s > THRESHOLD_MS,
+          samples: { jotastic: samples.jotastic.map(r2), solid: samples.solid.map(r2) },
+        }
+        process.stdout.write(`  ${op.name}: jotastic ${r2(j)} ms · solid ${r2(s)} ms\n`)
       }
-      const j = median(samples.jotastic)
-      const s = median(samples.solid)
-      results[op.id] = {
-        name: op.name,
-        jotastic: r2(j),
-        solid: r2(s),
-        ratio: r2(j / s),
-        samples: { jotastic: samples.jotastic.map(r2), solid: samples.solid.map(r2) },
-      }
-      process.stdout.write(`  ${op.name}: jotastic ${r2(j)} ms · solid ${r2(s)} ms\n`)
+      rounds.push(round)
     }
   } finally {
     await browser.close()
@@ -270,8 +285,30 @@ async function main() {
     browser: `chrome ${browserVersion}`,
     cpu: os.cpus()[0]?.model,
     runs: RUNS,
+    rounds: ROUNDS,
     warmup: WARMUP,
     metric: 'mediana ms, clique → próxima macrotarefa + layout forçado (sem pintura)',
+    criterion: `falha se > solid + ${THRESHOLD * 100}% e > solid + ${THRESHOLD_MS} ms em ${NEEDED} de ${ROUNDS} execuções`,
+  }
+
+  // Resumo por operação: medianas de todas as amostras, razão e veredito por execução.
+  const results = {}
+  for (const op of OPS) {
+    const per = rounds.map((round) => round[op.id])
+    const all = (fw) => per.flatMap((x) => x.samples[fw])
+    const j = median(all('jotastic'))
+    const s = median(all('solid'))
+    const fails = per.filter((x) => x.failed).length
+    results[op.id] = {
+      name: op.name,
+      jotastic: r2(j),
+      solid: r2(s),
+      ratio: r2(j / s),
+      rounds: per.map(({ samples, ...x }) => x),
+      fails,
+      failed: fails >= NEEDED,
+      samples: { jotastic: all('jotastic'), solid: all('solid') },
+    }
   }
 
   // tabela
@@ -284,8 +321,9 @@ async function main() {
     'jotastic (ms)': r.jotastic,
     'solid (ms)': r.solid,
     'jotastic/solid': `${r.ratio.toFixed(2)}x`,
+    ...(ROUNDS > 1 ? { execuções: r.rounds.map((x) => `${x.ratio.toFixed(2)}x${x.failed ? '✗' : ''}`).join(' ') } : {}),
     ...(baseline ? { 'solid salvo (ms)': baseline.results?.[id]?.solid ?? '-' } : {}),
-    status: r.ratio > 1 + THRESHOLD ? 'FALHA' : 'ok',
+    status: r.failed ? 'FALHA' : 'ok',
   }))
   console.log()
   console.table(rows)
@@ -306,11 +344,11 @@ async function main() {
   const failed = rows.filter((r) => r.status === 'FALHA')
   if (failed.length) {
     console.error(
-      `\n${failed.length} operação(ões) acima de +${THRESHOLD * 100}% do Solid: ${failed.map((r) => r.operação).join(', ')}`,
+      `\n${failed.length} operação(ões) reprovada(s) (${meta.criterion}): ${failed.map((r) => r.operação).join(', ')}`,
     )
     process.exit(1)
   }
-  console.log(`\nok: todas as operações dentro de +${THRESHOLD * 100}% do Solid`)
+  console.log(`\nok: nenhuma operação reprovada (${meta.criterion})`)
 }
 
 main().catch((e) => {

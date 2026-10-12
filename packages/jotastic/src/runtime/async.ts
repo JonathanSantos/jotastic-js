@@ -15,7 +15,7 @@ import {
   type DevMeta,
   type Owner,
 } from './owner'
-import { effect, memo, signal, state, untrack, withAbortSignal, type Signal } from './reactive'
+import { renderEffect, memo, signal, state, untrack, withAbortSignal, type Signal } from './reactive'
 
 export interface Resource<T> {
   readonly value: Signal<T | undefined>
@@ -95,31 +95,28 @@ export function resource<T>(fn: (signal: AbortSignal) => Promise<T> | T, dev?: D
 
   if (owner && owner.boundary) runWithOwner(owner, () => owner.boundary!.track(res))
 
-  effect(
-    () => {
-      trigger.get()
-      if (controller) controller.abort()
-      const ctrl = (controller = new AbortController())
-      const v = ++version
-      let result: Promise<T> | T
-      try {
-        result = withAbortSignal(ctrl.signal, () => fn(ctrl.signal))
-      } catch (e) {
-        untrack(() => fail(v, e))
-        return
-      }
-      untrack(() => {
-        if (isThenable(result)) {
-          if (!loading.peek()) pending.set(true)
-          result.then(
-            (val) => succeed(v, val as T),
-            (e) => fail(v, e),
-          )
-        } else succeed(v, result)
-      })
-    },
-    { kind: 'render', name: dev?.name, loc: dev?.loc },
-  )
+  renderEffect(() => {
+    trigger.get()
+    if (controller) controller.abort()
+    const ctrl = (controller = new AbortController())
+    const v = ++version
+    let result: Promise<T> | T
+    try {
+      result = withAbortSignal(ctrl.signal, () => fn(ctrl.signal))
+    } catch (e) {
+      untrack(() => fail(v, e))
+      return
+    }
+    untrack(() => {
+      if (isThenable(result)) {
+        if (!loading.peek()) pending.set(true)
+        result.then(
+          (val) => succeed(v, val as T),
+          (e) => fail(v, e),
+        )
+      } else succeed(v, result)
+    })
+  }, dev)
 
   if (owner)
     registerDisposable(owner, () => {
@@ -141,25 +138,22 @@ export function continuation(res: Resource<unknown>, fn: () => Rendered): () => 
   const parent = getOwner()
   const out = signal<Rendered>(null)
   let current: Owner | null = null
-  effect(
-    () => {
-      const ready = !res.loading.get() && res.error.get() === undefined
-      untrack(() => {
-        if (!ready) {
-          if (current) {
-            dispose(current)
-            current = null
-            out.set(null)
-          }
-          return
+  renderEffect(() => {
+    const ready = !res.loading.get() && res.error.get() === undefined
+    untrack(() => {
+      if (!ready) {
+        if (current) {
+          dispose(current)
+          current = null
+          out.set(null)
         }
-        if (current) return
-        current = createOwner('continuation', parent)
-        out.set(renderIn(current, fn))
-      })
-    },
-    { kind: 'render' },
-  )
+        return
+      }
+      if (current) return
+      current = createOwner('continuation', parent)
+      out.set(renderIn(current, fn))
+    })
+  })
   return () => out.get()
 }
 
@@ -251,26 +245,23 @@ export function boundary(props: BoundaryProps): () => Rendered {
     // View de pending/erro num owner próprio, com a fronteira de fora (erro na view sobe).
     const view = signal<Rendered>(null)
     let viewOwner: Owner | null = null
-    effect(
-      () => {
-        const m = mode.get()
-        untrack(() => {
-          if (viewOwner) dispose(viewOwner)
-          viewOwner = null
-          const fn =
-            m === 'error'
-              ? props.error && (() => props.error!(failure.peek().error, retry))
-              : m === 'pending'
-                ? props.pending
-                : undefined
-          if (!fn) return view.set(null)
-          viewOwner = createOwner('branch', owner)
-          viewOwner.boundary = outer
-          view.set(renderIn(viewOwner, fn))
-        })
-      },
-      { kind: 'render' },
-    )
+    renderEffect(() => {
+      const m = mode.get()
+      untrack(() => {
+        if (viewOwner) dispose(viewOwner)
+        viewOwner = null
+        const fn =
+          m === 'error'
+            ? props.error && (() => props.error!(failure.peek().error, retry))
+            : m === 'pending'
+              ? props.pending
+              : undefined
+        if (!fn) return view.set(null)
+        viewOwner = createOwner('branch', owner)
+        viewOwner.boundary = outer
+        view.set(renderIn(viewOwner, fn))
+      })
+    })
 
     return () => (mode.get() === 'ok' ? content.get() : view.get())
   })

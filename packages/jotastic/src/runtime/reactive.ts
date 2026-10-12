@@ -12,16 +12,13 @@ import {
   handleError,
   jotasticError,
   nextId,
+  OwnerNode,
   registerDisposable,
   setOwner,
   type Cleanup,
   type DevMeta,
   type Dispose,
-  type BoundaryHandle,
-  type Disposable,
-  type ErrorInfo,
   type Owner,
-  type OwnerImpl,
 } from './owner'
 import { readonly, toReactive } from './proxy'
 import { shallowEqual } from './shallow'
@@ -52,7 +49,7 @@ type State = typeof CLEAN | typeof CHECK | typeof DIRTY
 
 /** Execuções do mesmo efeito dentro de um único flush antes de `effect-loop`. */
 const LOOP_LIMIT = 100
-const NO_ERROR: unknown = Symbol('no-error')
+const NO_ERROR: unknown = Symbol(DEV ? 'no-error' : '')
 
 type Source = SignalNode<any> | MemoNode<any> | SelectorNode
 type Computation = MemoNode<any> | EffectNode
@@ -62,17 +59,24 @@ let currentEffect: EffectNode | null = null
 let ambientSignal: AbortSignal | null = null
 let neverAborts: AbortSignal | null = null
 
+/**
+ * `sources` é array (sem alocar um `Set` por efeito); a deduplicação usa o `observers` da fonte, que contém `obs` se e
+ * somente se a fonte está em `obs.sources` (os dois lados mudam juntos).
+ */
 function track(source: Source): void {
   const obs = currentObserver
-  if (obs !== null && !obs.sources.has(source)) {
-    obs.sources.add(source)
+  if (obs !== null && !source.observers.has(obs)) {
+    obs.sources.push(source)
     source.observers.add(obs)
   }
 }
 
 function clearSources(c: Computation): void {
-  for (const s of c.sources) s.observers.delete(c)
-  c.sources.clear()
+  const ss = c.sources
+  for (let i = 0; i < ss.length; i++) {
+    ss[i]!.observers.delete(c)
+  }
+  ss.length = 0
 }
 
 /** Eleva o estado de `c`. Ao sair de CLEAN: memo propaga CHECK; efeito entra na fila. */
@@ -184,7 +188,7 @@ function isPlainOrArray(v: unknown): v is object {
 class MemoNode<T> implements Memo<T> {
   readonly id = nextId()
   state: State = CLEAN
-  sources = new Set<Source>()
+  sources: Source[] = []
   observers = new Set<Computation>()
   value!: T
   error: unknown = NO_ERROR
@@ -310,7 +314,7 @@ export function memo<T>(fn: () => T, opts?: MemoOptions<T>): Memo<T> {
     clearSources(m)
     throw m.error
   }
-  if (m.sources.size === 0) {
+  if (m.sources.length === 0) {
     m.constant = true
     ;(m as unknown as { fn: null }).fn = null
   } else if (owner) {
@@ -336,38 +340,25 @@ export function memo<T>(fn: () => T, opts?: MemoOptions<T>): Memo<T> {
  * e owners criados na execução pertencem a ela e são descartados antes da próxima e no dispose. Sem alocação extra:
  * os campos de owner ficam vazios até alguém registrar algo.
  */
-class EffectNode implements OwnerImpl {
-  readonly id = nextId()
+class EffectNode extends OwnerNode {
   state: State = CLEAN
-  sources = new Set<Source>()
+  sources: Source[] = []
   cleanup: Cleanup | null = null
   controller: AbortController | null = null
   queued = false
-  disposed = false
   /** Loop guard: flush em que `runs` foi contado. */
   stamp = 0
   runs = 0
-  // Owner (escopo da execução corrente). Sem `name`: `handleError` usa o nome do componente acima.
-  readonly kind = 'effect' as const
-  context: Map<symbol, unknown> | null = null
-  children: Set<OwnerImpl> | null = null
-  disposables: Disposable[] | null = null
-  onError: ((error: unknown, info: ErrorInfo) => void) | null = null
-  declare readonly depth: number
-  declare boundary: BoundaryHandle | null
   declare private fn: () => void | Cleanup
-  /** Owner onde o efeito foi criado (o `parent` do escopo). */
-  declare readonly parent: Owner | null
   /** Fila: `render` (bindings, primeira execução síncrona) ou `user`. */
   declare readonly type: 'render' | 'user'
   /** Dev: encanamento interno (vigia do `selector`), fora de `counts().effects`. */
   declare quiet?: boolean
 
+  /** `parent`: owner onde o efeito foi criado. Sem `name`: `handleError` usa o nome do componente acima. */
   constructor(fn: () => void | Cleanup, parent: Owner | null, kind: 'render' | 'user') {
+    super('effect', parent)
     this.fn = fn
-    this.parent = parent
-    this.depth = parent ? parent.depth + 1 : 0
-    this.boundary = parent ? parent.boundary : null
     this.type = kind
   }
 
@@ -441,9 +432,21 @@ class EffectNode implements OwnerImpl {
  * Pertence ao owner atual. Fora de owner: erro `use-outside-owner` em dev (roteado por handleError), vive para sempre.
  */
 export function effect(fn: () => void | Cleanup, opts?: EffectOptions): Dispose {
+  const e = createEffect(fn, opts?.kind ?? 'user', opts)
+  return () => e.dispose()
+}
+
+/** Interno: efeito de render de um binding (sem objeto de opções nem função de dispose). */
+export function renderEffect(fn: () => void | Cleanup, dev?: DevMeta): void {
+  createEffect(fn, 'render', dev)
+}
+
+/** Dev: opções do vigia do `selector` (encanamento interno, fora de `counts().effects`). */
+const QUIET: DevMeta | undefined = DEV ? { name: 'selector' } : undefined
+
+function createEffect(fn: () => void | Cleanup, kind: 'render' | 'user', opts: DevMeta | undefined): EffectNode {
   const owner = getOwner()
-  const kind = opts?.kind ?? 'user'
-  if (DEV && !owner) {
+  if (DEV && !owner && opts !== QUIET) {
     handleError(
       null,
       jotasticError('use-outside-owner', `efeito${opts?.name ? ` "${opts.name}"` : ''} criado fora de um owner`),
@@ -451,6 +454,7 @@ export function effect(fn: () => void | Cleanup, opts?: EffectOptions): Dispose 
     )
   }
   const e = new EffectNode(fn, owner, kind)
+  if (DEV && opts === QUIET) e.quiet = true
   if (owner) registerDisposable(owner, e)
   if (DEV && devtoolsHook()) {
     emitDevtools({
@@ -464,7 +468,7 @@ export function effect(fn: () => void | Cleanup, opts?: EffectOptions): Dispose 
   }
   if (kind === 'render') e.run()
   else mark(e, DIRTY)
-  return () => e.dispose()
+  return e
 }
 
 /** Thunk compartilhado para parâmetros ausentes de `use*` (D59): `function useX(a = _void)`. */
@@ -472,18 +476,37 @@ export const _void = (): undefined => undefined
 
 // ─── selector ────────────────────────────────────────────────────────────────
 
-/** Fonte por valor do `selector`: some do mapa quando o último observador sai (re-execução ou dispose). */
+/**
+ * Fonte por valor do `selector`, com a interface de conjunto que `track`/`clearSources` usam (é o próprio `observers`).
+ * Um observador (o caso de uma linha de lista) fica num campo, sem alocar `Set` (medido: um `Set` por linha custa ~10%
+ * no append de 1k); o `Set` só nasce no segundo. Some do mapa quando o último observador sai (re-execução ou dispose).
+ */
 class SelectorNode {
-  declare readonly observers: Set<Computation>
+  declare readonly observers: SelectorNode
+  one: Computation | null = null
+  more: Set<Computation> | null = null
+  declare readonly key: unknown
+  declare readonly map: Map<unknown, SelectorNode>
   constructor(key: unknown, map: Map<unknown, SelectorNode>) {
-    const node = this
-    this.observers = new (class extends Set<Computation> {
-      override delete(c: Computation): boolean {
-        const r = super.delete(c)
-        if (r && this.size === 0 && map.get(key) === node) map.delete(key)
-        return r
-      }
-    })()
+    this.observers = this
+    this.key = key
+    this.map = map
+  }
+
+  has(c: Computation): boolean {
+    return this.one === c || !!this.more?.has(c)
+  }
+
+  /** `track` só chama com `c` ausente (`has` antes). */
+  add(c: Computation): void {
+    if (this.one) (this.more ??= new Set()).add(c)
+    else this.one = c
+  }
+
+  delete(c: Computation): void {
+    if (this.one === c) this.one = null
+    else this.more?.delete(c)
+    if (!this.one && !this.more?.size && this.map.get(this.key) === this) this.map.delete(this.key)
   }
 }
 
@@ -498,10 +521,10 @@ export function selector<T>(source: () => T, equals?: (a: T, b: T) => boolean): 
   let current: T
   let started = false
   const notify = (node: SelectorNode | undefined) => {
-    if (node) for (const o of node.observers) mark(o, DIRTY)
+    if (node?.one) mark(node.one, DIRTY)
+    if (node?.more) for (const o of node.more) mark(o, DIRTY)
   }
-  const owner = getOwner()
-  const watcher = new EffectNode(
+  const watcher = createEffect(
     () => {
       const next = source()
       const prev = current
@@ -515,12 +538,9 @@ export function selector<T>(source: () => T, equals?: (a: T, b: T) => boolean): 
         notify(subs.get(next))
       }
     },
-    owner,
     'render',
+    QUIET,
   )
-  if (DEV) watcher.quiet = true
-  if (owner) registerDisposable(owner, watcher)
-  watcher.run()
   const pred = (value: T): boolean => {
     // Leitura antes do flush (ex.: num handler logo após o `set`): atualiza a seleção agora.
     if (watcher.state !== CLEAN && !watcher.disposed) {
@@ -539,9 +559,7 @@ export function selector<T>(source: () => T, equals?: (a: T, b: T) => boolean): 
 }
 
 /** Interno (dev, testes): mapa de observadores por valor de cada `selector`. */
-export const selectorSubs: WeakMap<Function, Map<unknown, { observers: Set<unknown> }>> | null = DEV
-  ? new WeakMap()
-  : null
+export const selectorSubs: WeakMap<Function, Map<unknown, unknown>> | null = DEV ? new WeakMap() : null
 
 // ─── Rastreamento ────────────────────────────────────────────────────────────
 
@@ -566,37 +584,18 @@ export function observerCount(s: Signal<unknown> | Memo<unknown>): number {
 
 // ─── Scheduler ───────────────────────────────────────────────────────────────
 
-/** Fila ordenada por id. Inserções quase sempre chegam em ordem crescente (append). */
-class Queue {
-  private items: (EffectNode | undefined)[] = []
-  private head = 0
-
-  get size(): number {
-    return this.items.length - this.head
-  }
-
-  push(e: EffectNode): void {
-    // Varre do fim: em ordem é O(1); fora de ordem o custo é o do `splice`, que já é linear.
-    const a = this.items
-    let i = a.length
-    while (i > this.head && a[i - 1]!.id > e.id) i--
-    a.splice(i, 0, e)
-  }
-
-  shift(): EffectNode | undefined {
-    if (this.head === this.items.length) return undefined
-    const e = this.items[this.head]
-    this.items[this.head++] = undefined
-    if (this.head === this.items.length) {
-      this.items.length = 0
-      this.head = 0
-    }
-    return e
-  }
+/**
+ * Filas ordenadas por id. Inserções quase sempre chegam em ordem crescente (append): varre do fim, então em ordem é
+ * O(1); fora de ordem o custo é o do `splice`, que já é linear. Retirada com `shift` (O(1) amortizado no V8).
+ */
+function enqueueSorted(a: EffectNode[], e: EffectNode): void {
+  let i = a.length
+  while (i > 0 && a[i - 1]!.id > e.id) i--
+  a.splice(i, 0, e)
 }
 
-const renderQueue = new Queue()
-const userQueue = new Queue()
+const renderQueue: EffectNode[] = []
+const userQueue: EffectNode[] = []
 let scheduled = false
 let flushing = false
 let batchDepth = 0
@@ -607,7 +606,7 @@ let tickResolvers: (() => void)[] = []
 function enqueue(e: EffectNode): void {
   if (e.queued || e.disposed) return
   e.queued = true
-  ;(e.type === 'render' ? renderQueue : userQueue).push(e)
+  enqueueSorted(e.type === 'render' ? renderQueue : userQueue, e)
   if (!scheduled) {
     scheduled = true
     queueMicrotask(onMicrotask)
@@ -629,7 +628,7 @@ export function flush(): void {
     return
   }
   if (flushing) return
-  if (renderQueue.size === 0 && userQueue.size === 0) {
+  if (renderQueue.length === 0 && userQueue.length === 0) {
     resolveTicks()
     return
   }
@@ -669,7 +668,7 @@ export function flush(): void {
     }
   } finally {
     flushing = false
-    if (renderQueue.size || userQueue.size) {
+    if (renderQueue.length || userQueue.length) {
       // Saída por exceção (modo de teste): o resto fica para o próximo microtask.
       if (!scheduled) {
         scheduled = true
@@ -711,7 +710,7 @@ export function batch<T>(fn: () => T): T {
 
 /** Promise resolvida depois do próximo flush (ou imediatamente se não há nada agendado). */
 export function tick(): Promise<void> {
-  if (!scheduled && !flushing && renderQueue.size === 0 && userQueue.size === 0) return Promise.resolve()
+  if (!scheduled && !flushing && renderQueue.length === 0 && userQueue.length === 0) return Promise.resolve()
   return new Promise((resolve) => tickResolvers.push(resolve))
 }
 

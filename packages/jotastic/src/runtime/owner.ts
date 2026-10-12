@@ -64,22 +64,38 @@ export function nextId(): number {
 let currentOwner: OwnerImpl | null = null
 let rethrowUnhandled = false
 
+/**
+ * Interno: owner como classe. O `EffectNode` estende (o efeito é um escopo, D-N4/N5): os campos de owner ficam vazios
+ * até alguém registrar algo.
+ */
+export class OwnerNode implements OwnerImpl {
+  readonly id = nextId()
+  disposed = false
+  context: Map<symbol, unknown> | null = null
+  children: Set<OwnerImpl> | null = null
+  disposables: Disposable[] | null = null
+  onError: ((error: unknown, info: ErrorInfo) => void) | null = null
+  declare readonly kind: Owner['kind']
+  declare readonly parent: Owner | null
+  declare readonly depth: number
+  declare boundary: BoundaryHandle | null
+  declare readonly name?: string
+  declare readonly loc?: string
+  constructor(kind: Owner['kind'], parent: Owner | null, dev?: DevMeta) {
+    this.kind = kind
+    this.parent = parent
+    this.depth = parent ? parent.depth + 1 : 0
+    this.boundary = parent ? parent.boundary : null
+    if (DEV) {
+      this.name = dev?.name
+      this.loc = dev?.loc
+    }
+  }
+}
+
 export function createOwner(kind: Owner['kind'], parent: Owner | null = currentOwner, dev?: DevMeta): Owner {
   const p = parent as OwnerImpl | null
-  const owner: OwnerImpl = {
-    id: nextId(),
-    parent: p,
-    depth: p ? p.depth + 1 : 0,
-    name: dev?.name,
-    loc: dev?.loc,
-    kind,
-    disposed: false,
-    context: null,
-    boundary: p ? p.boundary : null,
-    children: null,
-    disposables: null,
-    onError: null,
-  }
+  const owner = new OwnerNode(kind, p, dev)
   if (p) (p.children ??= new Set()).add(owner)
   if (DEV) {
     const hook = devtoolsHook()

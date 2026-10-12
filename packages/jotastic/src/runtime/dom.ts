@@ -7,7 +7,7 @@
 import { emitDomWrite } from './devtools'
 import { DEV } from './env'
 import { getOwner, handleError, registerDisposable, runWithOwner, type Owner } from './owner'
-import { effect, signal, untrack } from './reactive'
+import { effect, renderEffect, signal, untrack } from './reactive'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -83,16 +83,26 @@ export class Slot {
   }
 
   apply(value: unknown): void {
-    const items: (string | Node)[] = []
-    collect(value, items)
+    while (typeof value === 'function') value = value()
     const prev = this.current
     const parent = this.where()
 
-    // Caso texto: um único Text nosso → só `.data` (e só se mudou).
-    if (items.length === 1 && typeof items[0] === 'string' && prev.length === 1 && ownTexts.has(prev[0]!)) {
-      setText(prev[0] as Text, items[0])
-      return
+    // Caso texto (string/número): um único Text nosso → só `.data`; slot vazio → um Text novo. Sem arrays temporários.
+    if (typeof value === 'string' || typeof value === 'number') {
+      const s = String(value)
+      if (prev.length === 1 && ownTexts.has(prev[0]!)) return setText(prev[0] as Text, s)
+      if (!prev.length) {
+        const t = document.createTextNode(s)
+        ownTexts.add(t)
+        parent.insertBefore(t, this.marker)
+        if (DEV) emitDomWrite(t, 'insert')
+        this.current = [t]
+        return
+      }
     }
+
+    const items: (string | Node)[] = []
+    collect(value, items)
 
     const next: Node[] = new Array(items.length)
     for (let i = 0; i < items.length; i++) {
@@ -111,54 +121,56 @@ export class Slot {
       }
     }
 
-    if (prev.length) {
-      const keep = next.length ? new Set(next) : null
-      for (const n of prev) {
-        if ((keep === null || !keep.has(n)) && n.parentNode === parent) {
-          parent.removeChild(n)
-          emitDomWrite(n, 'remove')
-        }
-      }
-    }
-
-    // Coloca de trás para frente; nó já no lugar certo não é tocado.
-    let ref = this.marker
-    for (let i = next.length - 1; i >= 0; i--) {
-      const n = next[i]!
-      if (n.parentNode !== parent || n.nextSibling !== ref) {
-        const moved = DEV && n.parentNode === parent
-        parent.insertBefore(n, ref)
-        emitDomWrite(n, moved ? 'move' : 'insert')
-      }
-      ref = n
-    }
+    if (prev.length) removeNodes(parent, prev, new Set(next))
+    place(parent, next, this.marker)
     this.current = next
   }
 
   /** Remove os nós atuais do DOM. */
   clear(): void {
-    const parent = this.where()
-    for (const n of this.current) {
-      if (n.parentNode === parent) {
-        parent.removeChild(n)
-        emitDomWrite(n, 'remove')
-      }
-    }
+    removeNodes(this.where(), this.current)
     this.current = []
   }
+}
+
+/** Interno (também em `flow.ts`): tira de `parent` os nós de `ns` que estão nele, exceto os de `keep`. */
+export function removeNodes(parent: Node, ns: Node[], keep?: Set<Node>): void {
+  for (const n of ns) {
+    if (n.parentNode === parent && !keep?.has(n)) {
+      parent.removeChild(n)
+      if (DEV) emitDomWrite(n, 'remove')
+    }
+  }
+}
+
+/**
+ * Interno (também em `flow.ts`): põe `ns`, em ordem, antes de `ref`, de trás para frente; nó já no lugar certo não é
+ * tocado. Devolve o novo `ref` (o primeiro de `ns`, ou `ref` se vazio).
+ */
+export function place(parent: Node, ns: Node[], ref: Node | null): Node | null {
+  for (let i = ns.length; i--;) {
+    const n = ns[i]!
+    if (n.parentNode !== parent || n.nextSibling !== ref) {
+      const moved = DEV && n.parentNode === parent
+      parent.insertBefore(n, ref)
+      if (DEV) emitDomWrite(n, moved ? 'move' : 'insert')
+    }
+    ref = n
+  }
+  return ref
 }
 
 function setText(t: Text, s: string): void {
   if (t.data !== s) {
     t.data = s
-    emitDomWrite(t, 'text')
+    if (DEV) emitDomWrite(t, 'text')
   }
 }
 
 /** Interno (para `createRoot`): como `insert`, mas devolve o `Slot` para remover os nós depois. */
 export function insertSlot(parent: Node, value: unknown, marker?: Node | null): Slot {
   const slot = new Slot(parent, marker ?? null)
-  if (hasFunction(value)) effect(() => slot.apply(value), { kind: 'render' })
+  if (hasFunction(value)) renderEffect(() => slot.apply(value))
   else slot.apply(value)
   return slot
 }
@@ -178,23 +190,20 @@ export function insert(parent: Node, value: unknown, marker?: Node | null): void
 export function text(marker: Comment | Text, read: () => unknown): void {
   let node: Text | null = marker.nodeType === 3 ? (marker as Text) : null
   let prev: string | null = node && node.data
-  effect(
-    () => {
-      const v = read()
-      const s = v == null || typeof v === 'boolean' ? '' : String(v)
-      if (s === prev) return
-      prev = s
-      if (node === null) {
-        node = document.createTextNode(s)
-        marker.replaceWith(node)
-        emitDomWrite(node, 'insert')
-      } else {
-        node.data = s
-        emitDomWrite(node, 'text')
-      }
-    },
-    { kind: 'render' },
-  )
+  renderEffect(() => {
+    const v = read()
+    const s = v == null || typeof v === 'boolean' ? '' : String(v)
+    if (s === prev) return
+    prev = s
+    if (node === null) {
+      node = document.createTextNode(s)
+      marker.replaceWith(node)
+      if (DEV) emitDomWrite(node, 'insert')
+    } else {
+      node.data = s
+      if (DEV) emitDomWrite(node, 'text')
+    }
+  })
 }
 
 // ─── Appliers ────────────────────────────────────────────────────────────────
@@ -210,7 +219,7 @@ function attrApplier(el: Element, name: string): Applier {
     prev = s
     if (s === null) el.removeAttribute(name)
     else el.setAttribute(name, s)
-    emitDomWrite(el, 'attr', name)
+    if (DEV) emitDomWrite(el, 'attr', name)
   }
 }
 
@@ -228,21 +237,21 @@ function propApplier(el: Element, name: string): Applier {
             wrote = true
           }
         }
-        if (wrote) emitDomWrite(el, 'prop', name)
+        if (DEV && wrote) emitDomWrite(el, 'prop', name)
         return
       }
       const s = v == null ? '' : String(v)
       // Compara como string e não escreve se igual: o caret não pula.
       if (target.value !== s) {
         target.value = s
-        emitDomWrite(el, 'prop', name)
+        if (DEV) emitDomWrite(el, 'prop', name)
       }
     }
   }
   return (v) => {
     if (target[name] !== v) {
       target[name] = v
-      emitDomWrite(el, 'prop', name)
+      if (DEV) emitDomWrite(el, 'prop', name)
     }
   }
 }
@@ -255,7 +264,7 @@ function boolApplier(el: Element, name: string): Applier {
     prev = on
     if (on) el.setAttribute(name, '')
     else el.removeAttribute(name)
-    emitDomWrite(el, 'attr', name)
+    if (DEV) emitDomWrite(el, 'attr', name)
   }
 }
 
@@ -277,12 +286,14 @@ function normalizeClass(v: unknown, out: Set<string>): void {
 
 function classApplier(el: Element): Applier {
   // Classes do template ficam intactas: nunca são removidas por um diff. O Set só é montado na primeira remoção.
-  const initial = el.getAttribute('class')
+  // `initial` é lido antes da primeira escrita nossa (não na criação: uma linha sem classe dinâmica nem lê o DOM).
+  let initial: string | null | undefined
   let fixed: Set<string> | null = null
   let prev: Set<string> | null = null
   return (v) => {
     // Nada antes e nada agora (caso comum na criação): sem alocar.
     if (!v && prev === null) return
+    if (initial === undefined) initial = el.getAttribute('class')
     const next = new Set<string>()
     normalizeClass(v, next)
     let changed = false
@@ -307,7 +318,7 @@ function classApplier(el: Element): Applier {
       }
     }
     prev = next
-    if (changed) emitDomWrite(el, 'class')
+    if (DEV && changed) emitDomWrite(el, 'class')
   }
 }
 
@@ -343,7 +354,7 @@ function styleApplier(el: HTMLElement | SVGElement): Applier {
       prevObj = null
       prevStr = s
       st.cssText = s
-      emitDomWrite(el, 'style')
+      if (DEV) emitDomWrite(el, 'style')
       return
     }
     if (prevObj === null) {
@@ -376,12 +387,12 @@ function styleApplier(el: HTMLElement | SVGElement): Applier {
       }
     }
     prevObj = next
-    if (changed) emitDomWrite(el, 'style')
+    if (DEV && changed) emitDomWrite(el, 'style')
   }
 }
 
 function bind(apply: Applier, read: () => unknown): void {
-  effect(() => apply(read()), { kind: 'render' })
+  renderEffect(() => apply(read()))
 }
 
 /** `setAttribute(name, String(v))`; `null | undefined | false` → `removeAttribute`; `true` → `""`. */
@@ -411,17 +422,14 @@ export function style(el: HTMLElement | SVGElement, read: () => StyleValue): voi
 
 // ─── Eventos ─────────────────────────────────────────────────────────────────
 
-/** Adiciona o listener embrulhado (owner, untrack, try/catch, Promise) e devolve a função que o remove. */
-function addListener(
-  el: EventTarget,
-  type: string,
-  handler: (e: Event) => unknown,
-  owner: Owner | null,
-  opts?: AddEventListenerOptions,
-): () => void {
-  const wrapped = (e: Event) => {
+/**
+ * Interno (também em `external.ts`): embrulha um handler: roda no owner, sem rastrear, com `this` = `self`; exceção
+ * síncrona ou Promise rejeitada → `handleError(owner, e, 'handler')`.
+ */
+export function wrapHandler(owner: Owner | null, handler: (e: Event) => unknown, self?: unknown): (e: Event) => void {
+  return (e) => {
     try {
-      const r = untrack(() => runWithOwner(owner, () => handler.call(el, e)))
+      const r = runWithOwner(owner, () => untrack(() => handler.call(self, e)))
       if (r && typeof (r as Promise<unknown>).then === 'function') {
         ;(r as Promise<unknown>).then(undefined, (err) => handleError(owner, err, 'handler'))
       }
@@ -429,6 +437,17 @@ function addListener(
       handleError(owner, err, 'handler')
     }
   }
+}
+
+/** Adiciona o listener embrulhado e devolve a função que o remove. */
+function addListener(
+  el: EventTarget,
+  type: string,
+  handler: (e: Event) => unknown,
+  owner: Owner | null,
+  opts?: AddEventListenerOptions,
+): () => void {
+  const wrapped = wrapHandler(owner, handler, el)
   el.addEventListener(type, wrapped, opts)
   return () => el.removeEventListener(type, wrapped, opts)
 }
@@ -667,31 +686,28 @@ export function spread(el: Element, read: () => Record<string, unknown>): void {
   const owner = getOwner()
   const src = signal<Record<string, unknown>>({})
   const bindings = new Map<string, KeyBinding>()
-  effect(
-    () => {
-      const obj = read() ?? {}
-      src.set(obj)
-      const keys = Object.keys(obj)
-      untrack(() => {
-        if (bindings.size) {
-          const seen = new Set(keys)
-          for (const [k, b] of bindings) {
-            if (!seen.has(k)) {
-              b.off()
-              b.reset()
-              bindings.delete(k)
-            }
+  renderEffect(() => {
+    const obj = read() ?? {}
+    src.set(obj)
+    const keys = Object.keys(obj)
+    untrack(() => {
+      if (bindings.size) {
+        const seen = new Set(keys)
+        for (const [k, b] of bindings) {
+          if (!seen.has(k)) {
+            b.off()
+            b.reset()
+            bindings.delete(k)
           }
         }
-        // Bindings por chave vivem no owner do `spread`, não na execução do efeito externo (que é um escopo):
-        // sobrevivem às reexecuções e saem só quando a chave some ou no dispose.
-        runWithOwner(owner, () => {
-          for (const k of keys) if (!bindings.has(k)) bindings.set(k, bindKey(el, k, src, owner))
-        })
+      }
+      // Bindings por chave vivem no owner do `spread`, não na execução do efeito externo (que é um escopo):
+      // sobrevivem às reexecuções e saem só quando a chave some ou no dispose.
+      runWithOwner(owner, () => {
+        for (const k of keys) if (!bindings.has(k)) bindings.set(k, bindKey(el, k, src, owner))
       })
-    },
-    { kind: 'render' },
-  )
+    })
+  })
   if (owner) {
     registerDisposable(owner, () => {
       for (const b of bindings.values()) b.off()

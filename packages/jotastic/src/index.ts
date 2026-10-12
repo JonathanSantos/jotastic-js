@@ -67,7 +67,7 @@ function notCompiled(name: string, hint: string): never {
  */
 export function mount(el: JSX.Element, target: Element | string, options: MountOptions = {}): () => void {
   const t = typeof target === 'string' ? document.querySelector(target) : target
-  if (!t) throw jotasticError('mount-target-missing', `mount: alvo ${DEV ? `"${String(target)}" ` : ''}não encontrado`)
+  if (!t) throw jotasticError('mount-target-missing', DEV ? `mount: alvo "${String(target)}" não encontrado` : '')
 
   const handlers: Array<(error: unknown, info: ErrorInfo) => void> = options.onError ? [options.onError] : []
   const dispatch = (error: unknown, info: ErrorInfo): void => {

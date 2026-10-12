@@ -285,3 +285,14 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | Z-21 | `<>{count}{xs.map(…)}</>`: fragmento com outros accessors reaplica o array num efeito e recria a lista | exige suporte no runtime |
 | Z-22 | Custo do `selector` por linha (inscrição/descarte): com ele create 1.30×, append 1.50×, clear 1.90×; sem ele 1.12×/1.18×/1.25× (select 0.70× vs 4.67×) | otimizar o runtime |
 | Z-23 | Tamanho após D58/D63/D64: counter 3519 B (limite 3584, meta 3 KB); TodoMVC **7516 B** (limite 7168; ~165 B do `selector` pelo `filter === f` do nav) | reavaliar limites (X-7) |
+
+## Desempenho e tamanho (após o 22)
+
+Bench com critério G-6 (3 rodadas): create 1k 1.11×, **replace 1k 1.30× (falha, +6 ms)**, update 1.14×, select 0.86×, swap 1.07×, remove 1.01×, create 10k 0.99×, append 1.09×, clear 1.22× (+0,46 ms). Counter 3399 B; TodoMVC 7181 B (limite 7168); async ~9344 B (limite provisório 9216).
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| Z-24 | **Replace 1k +6 ms vem dos listeners por linha**: sem os dois `onClick` da linha do bench cai para 0,88× do Solid; não remover listeners ou usar função compartilhada não muda; DOM puro não reproduz (+0,6 ms). Atende a condição de D29 ("delegação local só se o benchmark provar ≥ 10%") apesar de G-5 | **decidir**: delegação local ao container de `list()` |
+| Z-25 | TodoMVC 13 B acima do limite (ruído do brotli ±30–40 B); async acima do provisório | reavaliar limites ou cortar em `list`/métodos de array |
+| Z-26 | `raw(obj)` remove `obj` do mapa raw→proxy: array com o proxy antigo de um objeto depois passado a `raw()` não acha via `includes(rawObj)` | assim |
+| Z-27 | Prod: mensagem de `mount-target-missing` vazia (só o código), como `effect-loop` | assim |

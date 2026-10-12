@@ -1,11 +1,11 @@
 // Integração com o mundo externo: external, on, onMount, inspect (04-efeitos-e-ciclo-de-vida.md).
 
 import { DEV } from './env'
+import { wrapHandler } from './dom'
 import {
   createOwner,
   dispose,
   getOwner,
-  handleError,
   jotasticError,
   onCleanup,
   runWithOwner,
@@ -140,20 +140,6 @@ export function external<T>(
 }
 
 // ─── on ──────────────────────────────────────────────────────────────────────
-
-/** Embrulha um handler como `listen`: roda no owner, sem rastrear; exceção ou Promise rejeitada → handleError. */
-function wrapHandler(owner: Owner | null, handler: (e: Event) => unknown): (e: Event) => void {
-  return (e) => {
-    try {
-      const r = runWithOwner(owner, () => untrack(() => handler(e)))
-      if (r && typeof (r as Promise<unknown>).then === 'function') {
-        ;(r as Promise<unknown>).then(undefined, (err) => handleError(owner, err, 'handler'))
-      }
-    } catch (err) {
-      handleError(owner, err, 'handler')
-    }
-  }
-}
 
 function isEventTarget(t: unknown): t is EventTarget {
   return (

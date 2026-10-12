@@ -6,10 +6,10 @@
 // bindings dele são pulados (owner `disposed`).
 
 import { emitDevtools, emitDomWrite, devtoolsHook, warn } from './devtools'
-import { collect, hasFunction, insertSlot, Slot } from './dom'
+import { collect, hasFunction, insertSlot, place, removeNodes, Slot } from './dom'
 import { DEV } from './env'
 import { createOwner, dispose, getOwner, handleError, onCleanup, runWithOwner, type DevMeta, type Owner } from './owner'
-import { effect, isTracking, memo, signal, untrack, type Signal } from './reactive'
+import { renderEffect, isTracking, memo, signal, untrack, type Signal } from './reactive'
 
 /** Resultado de um componente / de uma expressão de JSX (arrays recursivos, L-7). Funções são accessors (lazy). */
 export type Rendered = Node | Rendered[] | string | number | boolean | null | undefined | (() => Rendered)
@@ -66,20 +66,17 @@ function decide<K>(select: { get(): K }, pick: (k: K) => (() => Rendered) | unde
   const parent = getOwner()
   const value = signal<Rendered>(null)
   let current: Owner | null = null
-  effect(
-    () => {
-      const k = select.get()
-      untrack(() => {
-        if (current) dispose(current)
-        current = null
-        const fn = pick(k)
-        if (!fn) return value.set(null)
-        current = createOwner('branch', parent)
-        value.set(renderIn(current, fn))
-      })
-    },
-    { kind: 'render' },
-  )
+  renderEffect(() => {
+    const k = select.get()
+    untrack(() => {
+      if (current) dispose(current)
+      current = null
+      const fn = pick(k)
+      if (!fn) return value.set(null)
+      current = createOwner('branch', parent)
+      value.set(renderIn(current, fn))
+    })
+  })
   return () => value.get()
 }
 
@@ -224,12 +221,7 @@ export function list<T>(
 
   const removeRow = (row: Row<T>, parent: Node): void => {
     dispose(row.owner)
-    for (const n of rowNodes(row as Row<unknown>)) {
-      if (n.parentNode === parent) {
-        parent.removeChild(n)
-        emitDomWrite(n, 'remove')
-      }
-    }
+    removeNodes(parent, rowNodes(row as Row<unknown>))
   }
 
   const reconcile = (items: T[]): void => {
@@ -334,17 +326,7 @@ export function list<T>(
     stablePositions(from)
     for (let j = newEnd; j >= start; j--) {
       const ns = rowNodes(next[j]! as Row<unknown>)
-      if (from[j - start] === -2) ref = ns[0] ?? ref
-      else
-        for (let k = ns.length - 1; k >= 0; k--) {
-          const node = ns[k]!
-          if (node.parentNode !== parent || node.nextSibling !== ref) {
-            const moved = node.parentNode === parent
-            parent.insertBefore(node, ref)
-            emitDomWrite(node, moved ? 'move' : 'insert')
-          }
-          ref = node
-        }
+      ref = from[j - start] === -2 ? (ns[0] ?? ref) : place(parent, ns, ref)
     }
 
     // Conteúdo dinâmico das linhas novas: agora que o marcador está no lugar.
@@ -362,15 +344,12 @@ export function list<T>(
     }
   }
 
-  effect(
-    () => {
-      const src = source()
-      // Copiar pelo iterador assina só a estrutura (`$iter`) de um array reativo, não cada índice.
-      const items = src == null ? [] : Array.from(src)
-      untrack(() => reconcile(items))
-    },
-    { kind: 'render', name: dev?.name, loc: dev?.loc },
-  )
+  renderEffect(() => {
+    const src = source()
+    // Copiar pelo iterador assina só a estrutura (`$iter`) de um array reativo, não cada índice.
+    const items = src == null ? [] : Array.from(src)
+    untrack(() => reconcile(items))
+  }, dev)
   // Sem pai fixo (D64): quem inseriu a âncora (o `insert` do pai, via fragmento) só conhece os nós do momento da
   // inserção; no dispose a lista tira as próprias linhas que ainda estão no DOM, inclusive as criadas depois.
   if (parent0 === null && listOwner)
@@ -437,21 +416,18 @@ export function portal(target: () => Element, render: () => Rendered): null {
       if (end.parentNode) end.parentNode.removeChild(end)
       slot = null
     }
-    effect(
-      () => {
-        const t = target()
-        if (!slot || slot.parent !== t) {
-          detach()
-          if (t) {
-            const end = document.createComment('')
-            t.appendChild(end)
-            slot = new Slot(t, end)
-          }
+    renderEffect(() => {
+      const t = target()
+      if (!slot || slot.parent !== t) {
+        detach()
+        if (t) {
+          const end = document.createComment('')
+          t.appendChild(end)
+          slot = new Slot(t, end)
         }
-        if (slot) slot.apply(content)
-      },
-      { kind: 'render' },
-    )
+      }
+      if (slot) slot.apply(content)
+    })
     onCleanup(detach)
   })
   return null
