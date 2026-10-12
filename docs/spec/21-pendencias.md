@@ -257,3 +257,18 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | G-5 | **D29 (delegação)**: sem listeners por linha, create 10k melhora ~7% (< 10%); `add/removeEventListener` = 1,6% do profile | **delegação não se justifica** |
 | G-6 | Ruído: Solid create 10k varia 8% entre execuções (~ o limiar) | limiar instável em CI; mais runs ou margem em ms |
 | G-7 | Após otimização (LIS, clear em lote, `index` lazy, `classList` sem alocação): create 1k 1.11×, replace 1.18×, update 1.04×, select 3.57×, swap 1.00×, remove 1.05×, create 10k 1.07×, append 1.21×, clear 1.22×. TodoMVC 7074 B (+216 B) | restante é custo estrutural por linha (3 efeitos, 2 listeners, proxy por item) |
+
+## Novas, ao aplicar o 22
+
+| # | Caso concreto | Provisório |
+|---|---|---|
+| Z-1 | Spec 10-modal ainda usa `useSlots<'actions'>` (não satisfaz T-5) e `declare const api` | cópias de teste/exemplo usam `useSlots<{ actions: JSX.Element }>` e `lib/api` |
+| Z-2 | 07: `watch(() => (matches = mql.matches))` devolve `boolean`, o contrato de `watch` aceita só `void \| (() => void)` | patch com corpo em chaves; decidir: exemplo ou contrato |
+| Z-3 | `docs/spec/examples/lib/api.ts`: `rename`/`deleteAccount` ignoram `r.ok` (erro HTTP não rejeita) | servidor simulado do `examples/async` falha como erro de rede |
+| Z-4 | 08-store: `get total() { return get().coupon ? get().subtotal * 0.9 : … }` → TS2339: `get(): S` só conhece o estado, não os getters (em runtime funciona) | cópias usam `this.subtotal`. Decidir: exemplo com `this` ou `get` tipado `S & M` |
+| Z-5 | Membro de `createStore` que não é getter nem função | exposto como está, readonly, fora do estado |
+| Z-6 | Valores marcados com `raw()` no estado inicial perdem a marca na cópia profunda (idem `$snapshot`) | assim |
+| Z-7 | Efeito como escopo: `Owner['kind']` ganhou `'effect'` (fora da união do contrato); escopos de efeito não são registrados no devtools, então um owner filho criado dentro de efeito pode reportar `parent` desconhecido | assim |
+| Z-8 | Contrato `HmrOptions` só tem `preserveState`; implementação mantém `reset` (`// @refresh reset`) | assim |
+| Z-9 | Analyzer W-5: hoisting só para `const x` com um `await` avaliado incondicionalmente; desestruturação/`let`/`c ? await x : y` → `await-position-unsupported` | assim |
+| Z-10 | `prefer-key-in-list` sem evidência dos itens (ex.: `let xs: Todo[]`) não avisa | assim |

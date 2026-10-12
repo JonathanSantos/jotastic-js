@@ -3,7 +3,8 @@ import type { SetFn, Store } from '../../src/public-types.js'
 
 export type { DeepReadonly, SetFn, Store } from '../../src/public-types.js'
 
-export declare function createStore<S extends object>(
-  factory: (set: SetFn<S>, get: () => S) => S,
+export declare function createStore<S extends object, M extends object = {}>(
+  state: S | (() => S),
+  members?: (set: SetFn<S>, get: () => S) => M,
   options?: { name?: string },
-): Store<S>
+): Store<S, M>

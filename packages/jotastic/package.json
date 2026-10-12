@@ -15,6 +15,11 @@
       "development": "./dist/dev/runtime.js",
       "default": "./dist/prod/runtime.js"
     },
+    "./runtime/hmr": {
+      "types": "./dist/prod/runtime/hmr.d.ts",
+      "development": "./dist/dev/runtime/hmr.js",
+      "default": "./dist/prod/runtime/hmr.js"
+    },
     "./store": {
       "types": "./dist/prod/store.d.ts",
       "development": "./dist/dev/store.js",

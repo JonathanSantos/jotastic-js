@@ -60,6 +60,43 @@ describe('18 §3 — uma linha por regra', () => {
     ['let array → state', 'let l: number[] = []\nreturn <p>{l.length}</p>', 'l', 'state'],
     ['let cópia de prop (identificador) → state', 'let d = p\nreturn <p>{d}</p>', 'd', 'state'],
     ['let atribuído com identificador → state', 'let x = 0\nreturn <p onClick={() => (x = p)}>{x}</p>', 'x', 'state'],
+    // D60: identificador de outro `let` signal, `a ?? b` com `b` primitivo, método de string/number
+    [
+      'let cópia de outro let signal → signal',
+      'let a = 0\nlet b = a\nreturn <p onClick={() => a++}>{a}{b}</p>',
+      'b',
+      'signal',
+    ],
+    [
+      'let atribuído com outro let signal → signal',
+      "let a = ''\nlet b = 'x'\nreturn <p onClick={() => (b = a)}>{a}{b}</p>",
+      'b',
+      'signal',
+    ],
+    [
+      'let atribuído com let state → state',
+      'let a = { n: 1 }\nlet b: any = 0\nreturn <p onClick={() => (b = a)}>{a.n}{b}</p>',
+      'b',
+      'state',
+    ],
+    [
+      'lets atribuídos um ao outro (ciclo) → state',
+      'let a: any = p\nlet b: any = a\nreturn <p onClick={() => (a = b)}>{a}{b}</p>',
+      'b',
+      'state',
+    ],
+    [
+      'identificador sombreado não é o let signal → state',
+      'let a = 0\nlet b = 0\nreturn <p onClick={(a: any) => (b = a)}>{a}{b}</p>',
+      'b',
+      'state',
+    ],
+    ["let a ?? 'x' → signal", "let s = p ?? 'x'\nreturn <p>{s}</p>", 's', 'signal'],
+    ['let a ?? {} → state', 'let s = p ?? {}\nreturn <p>{s}</p>', 's', 'state'],
+    ['let método de string → signal', 'let s = p.trim()\nreturn <p>{s}</p>', 's', 'signal'],
+    ['let método de number → signal', 'let s = p.toFixed(2)\nreturn <p>{s}</p>', 's', 'signal'],
+    ['let Number.isInteger → signal', 'let s = Number.isInteger(p)\nreturn <p>{s}</p>', 's', 'signal'],
+    ['let método desconhecido → state', 'let s = p.get()\nreturn <p>{s}</p>', 's', 'state'],
     ['let lido em const derivado → vivo', 'let n = 0\nconst d = n * 2\nreturn <p>{d}</p>', 'n', 'signal'],
     ['let lido em watch → vivo', 'let n = 0\nwatch(() => console.log(n))\nreturn <p />', 'n', 'signal'],
     ['let lido em argumento de use* → vivo', 'let n = 0\nconst r = useX(n)\nreturn <p>{r.v}</p>', 'n', 'signal'],
@@ -268,8 +305,7 @@ describe('exemplos de docs/spec coerentes com docs/spec/compiled', () => {
   test('02-todos (compiled/02): todos state, draft signal, derivados memo', () => {
     const k = kinds(body(run(ex('02-todos.tsx'), 'Todos.tsx'), 'Todos'))
     expect(k).toMatchObject({ todos: 'state', draft: 'signal', remaining: 'memo', visible: 'memo', allDone: 'memo' })
-    // compiled/02 usa signal para `filter`; pela regra de 18 §3 a atribuição `filter = f` (identificador) não é
-    // provavelmente primitiva → state (seguro). Divergência registrada nas pendências.
+    // D60: `filter = f` (parâmetro do handler, não um `let` signal) não é provavelmente primitivo → state (compiled/02)
     expect(k.filter).toBe('state')
   })
 
@@ -286,7 +322,7 @@ export function UserPage({ id }: { id: string }) {
 }`),
       'UserPage',
     )
-    // compiled/04 usa signal para `tab`; `tab = t` (identificador) não é provavelmente primitivo → state (pendência)
+    // D60: `tab = t` (parâmetro do handler) não é provavelmente primitivo → state (compiled/04)
     expect(kinds(b)).toEqual({ user: 'useResult', tab: 'state', fullName: 'memo' })
     expect(b.bindings.get('user')!.flowIndex).toBe(-1)
     expect(b.bindings.get('tab')!.flowIndex).toBe(1)
@@ -311,8 +347,7 @@ export function UserPage({ id }: { id: string }) {
   test('07-use-functions (compiled/03): mql memo, data state; pos stateLiteral; previous plain', () => {
     const a = run(ex('07-use-functions.ts'), 'use.ts')
     expect(kinds(body(a, 'useFetch')).data).toBe('state')
-    // compiled/03 usa signal para `error` e `matches`; pela regra (atribuição `error = e`, init `mql.matches`)
-    // ficam state. Divergência registrada nas pendências.
+    // D60: `error = e` e init `mql.matches` não são provavelmente primitivos → state (compiled/03)
     expect(kinds(body(a, 'useFetch')).error).toBe('state')
     expect(kinds(body(a, 'useMediaQuery'))).toEqual({ mql: 'memo', matches: 'state' })
     expect(kinds(body(a, 'useMouse'))).toEqual({ pos: 'stateLiteral' })

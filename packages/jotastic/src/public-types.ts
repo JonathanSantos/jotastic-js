@@ -31,12 +31,14 @@ export interface AppContext {
 
 export interface BoundaryProps {
   pending?: JSX.Element
-  error?: (error: unknown, retry: () => void) => JSX.Element
+  /** Não-Error lançados são embrulhados em `Error` pelo runtime (`cause` guarda o original). */
+  error?: (error: Error, retry: () => void) => JSX.Element
   children?: JSX.Element
 }
 
 export type SlotFn = (...args: any[]) => JSX.Element
-export type Slots<N extends string = never> = { default: JSX.Element } & { [K in N]?: JSX.Element | SlotFn }
+/** Mapa de slots (T-5): `useSlots<{ header: JSX.Element; row: (item: Item) => JSX.Element }>(children)`. */
+export type Slots<S extends Record<string, JSX.Element | SlotFn> = {}> = { default: JSX.Element } & Partial<S>
 
 // contexto (fase 2, já tipado)
 export interface Context<T> {
@@ -71,11 +73,12 @@ export type DeepReadonly<T> = T extends (...args: any[]) => any
 
 export type SetFn<S> = (update: Partial<S> | ((draft: S) => Partial<S> | void)) => void
 
-export type Store<S extends object> = DeepReadonly<S> & {
-  /** Cópia plana, sem proxy. */
-  $snapshot(): S
-  /** Volta ao estado inicial (reexecuta a factory). */
-  $reset(): void
-  /** Nome para o devtools (inferido do export pelo compilador; pode ser passado em `createStore(factory, { name })`). */
-  readonly $name: string
-}
+export type Store<S extends object, M extends object> = DeepReadonly<S> &
+  M & {
+    /** Cópia plana do ESTADO, sem proxy (sem getters nem ações). */
+    $snapshot(): S
+    /** Volta ao estado inicial (reavalia `state` se for função). */
+    $reset(): void
+    /** Nome para o devtools (inferido do export pelo compilador; ou `options.name`). */
+    readonly $name: string
+  }

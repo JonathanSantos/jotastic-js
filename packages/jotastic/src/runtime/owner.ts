@@ -28,7 +28,9 @@ export interface Owner {
   readonly parent: Owner | null
   readonly depth: number
   readonly name?: string
-  readonly kind: 'root' | 'component' | 'branch' | 'item' | 'continuation' | 'boundary' | 'portal' | 'external'
+  /** `effect`: a execução corrente de um efeito (o efeito é um escopo, D-N4/N5); não aparece no devtools. */
+  readonly kind:
+    'root' | 'component' | 'branch' | 'item' | 'continuation' | 'boundary' | 'portal' | 'external' | 'effect'
   disposed: boolean
   context: Map<symbol, unknown> | null
   boundary: BoundaryHandle | null
@@ -43,9 +45,10 @@ export interface BoundaryHandle {
 }
 
 /** Algo que o owner descarta: uma função de cleanup ou um nó reativo (efeito/memo). */
-type Disposable = Cleanup | { dispose(): void }
+export type Disposable = Cleanup | { dispose(): void }
 
-interface OwnerImpl extends Owner {
+/** Interno: o que um owner guarda além da interface pública (`EffectNode` também implementa, como escopo). */
+export interface OwnerImpl extends Owner {
   loc?: string
   children: Set<OwnerImpl> | null
   disposables: Disposable[] | null
@@ -124,10 +127,28 @@ export function dispose(owner: Owner): void {
   const o = owner as OwnerImpl
   if (o.disposed) return
   o.disposed = true
+  disposeScope(o)
+  const parent = o.parent as OwnerImpl | null
+  if (parent && parent.children) parent.children.delete(o)
+  if (DEV) {
+    const hook = devtoolsHook()
+    if (hook) {
+      hook.registry.owners.delete(o.id)
+      hook.emit({ type: 'owner:dispose', id: o.id })
+    }
+  }
+}
+
+/**
+ * Interno: descarta o conteúdo de `owner` (filhos em ordem reversa, depois efeitos/memos/cleanups em ordem reversa)
+ * sem marcá-lo como descartado. O efeito usa antes de cada reexecução (o efeito é um escopo).
+ */
+export function disposeScope(owner: Owner): void {
+  const o = owner as OwnerImpl
   if (o.children) {
     const children = [...o.children]
-    for (let i = children.length - 1; i >= 0; i--) dispose(children[i]!)
     o.children = null
+    for (let i = children.length - 1; i >= 0; i--) dispose(children[i]!)
   }
   const items = o.disposables
   if (items) {
@@ -142,15 +163,6 @@ export function dispose(owner: Owner): void {
       }
     }
   }
-  const parent = o.parent as OwnerImpl | null
-  if (parent && parent.children) parent.children.delete(o)
-  if (DEV) {
-    const hook = devtoolsHook()
-    if (hook) {
-      hook.registry.owners.delete(o.id)
-      hook.emit({ type: 'owner:dispose', id: o.id })
-    }
-  }
 }
 
 /** Interno (para `createRoot`): handler `onError` do root. */
@@ -158,8 +170,8 @@ export function setOnError(owner: Owner, handler: ((error: unknown, info: ErrorI
   ;(owner as OwnerImpl).onError = handler
 }
 
-/** Interno (para `@jotastic/test`): com `true`, erro não tratado por fronteira nem por `onError` é relançado. */
-export function setRethrowUnhandled(on: boolean): void {
+/** Modo de teste (`@jotastic/test`, Q-1): erros não tratados pelo root são relançados em vez de irem para `console.error`. */
+export function __setTestMode(on: boolean): void {
   rethrowUnhandled = on
 }
 
@@ -172,7 +184,7 @@ export function jotasticError(code: string, message: string): Error & { code: st
 
 /**
  * Roteia um erro: fronteira mais próxima que trate (via `catch`) → `onError` do root → `console.error`.
- * Nunca lança, exceto com `setRethrowUnhandled(true)` quando ninguém tratou.
+ * Nunca lança, exceto com `__setTestMode(true)` quando ninguém tratou.
  */
 export function handleError(owner: Owner | null, error: unknown, phase: ErrorPhase): void {
   const info: ErrorInfo = { phase, owner: owner as Owner }

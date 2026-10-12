@@ -167,12 +167,30 @@ const PRIMITIVE_METHODS = new Set([
   'toPrecision',
   'toString',
   'toLocaleString',
+  'substring',
+  'substr',
+  'toExponential',
+  'trimLeft',
+  'trimRight',
+  'search',
+  'isWellFormed',
+  'toWellFormed',
 ])
 
 const PRIMITIVE_GLOBALS = new Set(['String', 'Number', 'Boolean', 'parseInt', 'parseFloat', 'isNaN', 'isFinite'])
 
-/** `true` se a expressão é sintaticamente "provavelmente primitiva" (18 §3). Na dúvida, `false`. */
-export function isProbablyPrimitive(node: t.Node): boolean {
+/** Métodos estáticos de `Number`/`String` que devolvem primitivo. */
+const PRIMITIVE_STATICS: Record<string, Set<string>> = {
+  Number: new Set(['isInteger', 'isSafeInteger', 'isFinite', 'isNaN', 'parseFloat', 'parseInt']),
+  String: new Set(['fromCharCode', 'fromCodePoint', 'raw']),
+}
+
+/**
+ * `true` se a expressão é sintaticamente "provavelmente primitiva" (18 §3). Na dúvida, `false`.
+ * `isPrimitiveId` (opcional, D60): identificador que lê outro `let` já classificado `signal`.
+ */
+export function isProbablyPrimitive(node: t.Node, isPrimitiveId?: (id: t.Identifier) => boolean): boolean {
+  const rec = (x: t.Node) => isProbablyPrimitive(x, isPrimitiveId)
   const n = unwrap(node)
   if (
     t.isStringLiteral(n) ||
@@ -183,13 +201,14 @@ export function isProbablyPrimitive(node: t.Node): boolean {
     t.isTemplateLiteral(n)
   )
     return true
-  if (t.isIdentifier(n)) return n.name === 'undefined' || n.name === 'NaN' || n.name === 'Infinity'
+  if (t.isIdentifier(n))
+    return n.name === 'undefined' || n.name === 'NaN' || n.name === 'Infinity' || !!isPrimitiveId?.(n)
   if (t.isUnaryExpression(n)) return true
   if (t.isBinaryExpression(n)) return true
   if (t.isUpdateExpression(n)) return true
   // `a && b`: valores falsy são sempre primitivos, então decide `b`. `a ?? 0`, `a || ''`: decide o fallback.
-  if (t.isLogicalExpression(n)) return isProbablyPrimitive(n.right)
-  if (t.isConditionalExpression(n)) return isProbablyPrimitive(n.consequent) && isProbablyPrimitive(n.alternate)
+  if (t.isLogicalExpression(n)) return rec(n.right)
+  if (t.isConditionalExpression(n)) return rec(n.consequent) && rec(n.alternate)
   if (t.isMemberExpression(n) || t.isOptionalMemberExpression(n))
     return !n.computed && t.isIdentifier(n.property) && n.property.name === 'length'
   if (t.isCallExpression(n) || t.isOptionalCallExpression(n)) {
@@ -200,6 +219,8 @@ export function isProbablyPrimitive(node: t.Node): boolean {
       const obj = unwrap(callee.object)
       if (t.isIdentifier(obj) && obj.name === 'Math') return true
       if (t.isIdentifier(obj) && obj.name === 'Date' && prop === 'now') return true
+      if (t.isIdentifier(obj) && Object.hasOwn(PRIMITIVE_STATICS, obj.name))
+        return PRIMITIVE_STATICS[obj.name]!.has(prop)
       return PRIMITIVE_METHODS.has(prop)
     }
   }

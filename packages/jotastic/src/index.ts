@@ -25,6 +25,7 @@ import type {
   EventMapOf,
   JSX,
   MountOptions,
+  SlotFn,
   Slots,
 } from './public-types'
 
@@ -81,7 +82,7 @@ export function mount(el: JSX.Element, target: Element | string, options: MountO
       if (plugins && plugins.length) {
         const app: AppContext = {
           target: t,
-          provide: (ctx, value) => runWithOwner(root, () => provide(ctx, value)),
+          provide: (ctx, value) => runWithOwner(root, () => provide(ctx, () => value)),
           onError(handler) {
             handlers.push(handler)
             setOnError(root, dispatch)
@@ -188,17 +189,22 @@ export function Slot(_props: {
 }
 
 /** Objeto de slots dos children. Compilado: `slots(props.children)`. */
-export function useSlots<N extends string = never>(children: JSX.Element | undefined): Slots<N> {
-  return slots(children) as unknown as Slots<N>
+export function useSlots<S extends Record<string, JSX.Element | SlotFn> = {}>(
+  children: JSX.Element | undefined,
+): Slots<S> {
+  return slots(children) as unknown as Slots<S>
 }
 
 // ─── contexto ────────────────────────────────────────────────────────────────
 
-/** Contexto com `Provider`: componente que registra `value` no próprio owner e devolve os children. */
+/**
+ * Contexto com `Provider`: componente que registra `value` no próprio owner e devolve os children. `value` é lido
+ * como getter (I-3): o compilador passa `get value()`, e `provide` guarda um memo dele.
+ */
 export function createContext<T>(defaultValue?: T): Context<T> {
   const ctx = runtimeCreateContext<T>(defaultValue) as { -readonly [K in keyof Context<T>]: Context<T>[K] }
   ctx.Provider = function Provider(props: { value: T; children?: JSX.Element }): JSX.Element {
-    provide(ctx, props.value)
+    provide(ctx, () => props.value)
     return props.children ?? null
   }
   return ctx

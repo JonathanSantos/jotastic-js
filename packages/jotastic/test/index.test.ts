@@ -23,7 +23,7 @@ import {
 } from '../src/index'
 import { resource, type Resource } from '../src/runtime/async'
 import { component, SLOTS, type Rendered } from '../src/runtime/flow'
-import { signal } from '../src/runtime/reactive'
+import { effect, memo, signal } from '../src/runtime/reactive'
 import { isReactive, reactive } from '../src/runtime/proxy'
 
 /** Cria um `<div id>` no body; removido no afterEach. */
@@ -389,6 +389,36 @@ describe('contexto', () => {
     const errors = vi.fn()
     mount(() => component(() => useContext(Empty), {}), '#b', { onError: errors })
     expect((errors.mock.calls[0]![0] as Error).message).toMatch(/context-missing/)
+  })
+})
+
+describe('contexto reativo (I-3)', () => {
+  test('Provider com `value` getter: o derivado que recebe useContext acompanha', async () => {
+    const el = host()
+    const Ctx = createContext<string>()
+    const theme = signal('claro')
+    const Read = () => {
+      const value = memo(() => useContext(Ctx))
+      const out = document.createElement('p')
+      effect(() => void (out.textContent = value.get()), { kind: 'render' })
+      return out
+    }
+    mount(
+      () =>
+        publicComponent(Ctx.Provider, {
+          get value() {
+            return theme.get()
+          },
+          get children() {
+            return component(Read, {})
+          },
+        }),
+      el,
+    )
+    expect(el.textContent).toBe('claro')
+    theme.set('escuro')
+    await tick()
+    expect(el.textContent).toBe('escuro')
   })
 })
 

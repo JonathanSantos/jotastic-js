@@ -1,0 +1,12 @@
+[
+  {
+    "id": "await-in-use-unsupported",
+    "level": "error",
+    "loc": {
+      "line": 2,
+      "column": 16,
+      "endLine": 2,
+      "endColumn": 35
+    }
+  }
+]

@@ -29,8 +29,15 @@ const KNOWN: ReadonlyArray<readonly [string, string]> = [
   ['IDBDatabase', 'close'],
 ]
 
-/** Destruição automática: o primeiro método que existir. Interno (exportado para testes). */
+/**
+ * Destruição automática. Valor função → chamada como destroy (X-5: `subscribe` devolve `unsubscribe`). Senão o primeiro
+ * método que existir. Interno (exportado para testes).
+ */
 export function autoDestroy(value: unknown): void {
+  if (typeof value === 'function') {
+    ;(value as () => void)()
+    return
+  }
   if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return
   const v = value as Record<PropertyKey, unknown>
   const sym = (Symbol as { dispose?: symbol }).dispose

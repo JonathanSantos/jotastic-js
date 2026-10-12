@@ -174,7 +174,7 @@ describe('async (A1–A9)', () => {
     const { container } = mount(() =>
       boundary({
         pending: () => text(() => 'carregando'),
-        children: () => [component(Child, { req: a.fn }), component(Child, { req: b.fn })] as Rendered, // L-7
+        children: () => [component(Child, { req: a.fn }), component(Child, { req: b.fn })],
       }),
     )
     // Children renderizados já (os recursos rodaram), mas fora do DOM.
@@ -308,6 +308,35 @@ describe('async (A1–A9)', () => {
     await tick()
     await tick()
     expect(m2.container.textContent).toBe('erro: binding')
+  })
+
+  test('boundary: não-Error lançado chega ao error() embrulhado em Error (original em cause)', () => {
+    const got: unknown[] = []
+    const { container } = mount(() =>
+      boundary({
+        error: (e) => (got.push(e), text(() => (e as Error).message)),
+        children: () =>
+          component((): Rendered => {
+            throw 'texto'
+          }, {}),
+      }),
+    )
+    expect(got[0]).toBeInstanceOf(Error)
+    expect((got[0] as Error).message).toBe('texto')
+    expect((got[0] as Error).cause).toBe('texto')
+    expect(container.textContent).toBe('texto')
+
+    const original = new TypeError('tipo')
+    mount(() =>
+      boundary({
+        error: (e) => (got.push(e), null),
+        children: () =>
+          component((): Rendered => {
+            throw original
+          }, {}),
+      }),
+    )
+    expect(got[1]).toBe(original)
   })
 
   test('A6 boundary sem error: erro sobe para o próximo boundary / root onError', async () => {

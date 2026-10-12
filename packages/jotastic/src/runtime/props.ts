@@ -2,6 +2,7 @@
 
 import { DEV } from './env'
 import { getOwner, jotasticError } from './owner'
+import { memo, type Memo } from './reactive'
 
 type Bag = Record<PropertyKey, unknown>
 
@@ -111,20 +112,23 @@ export function createContext<T>(defaultValue?: T): Context<T> {
   return { id: Symbol(DEV ? 'context' : ''), defaultValue }
 }
 
-/** Registra `value` no owner atual. */
-export function provide<T>(ctx: Context<T>, value: T): void {
+/**
+ * Registra `value` no owner atual (I-3). O compilador passa um getter (`() => props.value`); guardamos um memo dele,
+ * então `useContext` lido num contexto rastreado (o `const` que recebe vira derivado) acompanha as mudanças.
+ */
+export function provide<T>(ctx: Context<T>, value: () => T): void {
   const owner = getOwner()
   if (!owner) {
     if (DEV) throw jotasticError('use-outside-owner', 'provide chamado fora de um owner')
     return
   }
-  ;(owner.context ??= new Map()).set(ctx.id, value)
+  ;(owner.context ??= new Map()).set(ctx.id, memo(value))
 }
 
-/** Sobe pela cadeia de owners; se não achar, `defaultValue`; se nem isso, erro em dev. */
+/** Sobe pela cadeia de owners e lê o memo do Provider mais próximo; se não achar, `defaultValue`; nem isso, erro em dev. */
 export function useContext<T>(ctx: Context<T>): T {
   for (let o = getOwner(); o; o = o.parent) {
-    if (o.context && o.context.has(ctx.id)) return o.context.get(ctx.id) as T
+    if (o.context && o.context.has(ctx.id)) return (o.context.get(ctx.id) as Memo<T>).get()
   }
   if (ctx.defaultValue === undefined && DEV) {
     throw jotasticError('context-missing', 'useContext sem Provider acima e sem valor padrão')

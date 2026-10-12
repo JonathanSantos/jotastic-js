@@ -63,7 +63,7 @@ describe('examples/cart', () => {
     })
     mo.observe(container, { subtree: true, childList: true, characterData: true, attributes: true })
     resetCounts()
-    cart.add(pao) // S-1: ações terminam com flush síncrono
+    cart.add(pao) // D61: o DOM atualiza no microtask
     await flushMutations()
     mo.disconnect()
     const c = counts()

@@ -1,4 +1,4 @@
-// HMR (dev, M6; docs/spec/13-tooling.md §HMR). API interna, exportada de `jotastic/runtime` com prefixo `__`: só o
+// HMR (dev, M6; docs/spec/13-tooling.md §HMR, D65). API interna, subpath `jotastic/runtime/hmr`, prefixo `__`: só o
 // código que o compilador emite com `hmr` ligado chama `__hmrComponents` (no rodapé `if (import.meta.hot) {…}`).
 //
 // - Cada componente exportado de um módulo vira uma "família" (`arquivo#export`). Componente registrado monta por
@@ -152,8 +152,12 @@ function depth(inst: Instance): number {
  * Interno (dev, HMR): registra os componentes exportados de `file` (`{ Nome: Comp }`). Na primeira execução só
  * registra; numa reexecução (hot update) troca a implementação e remonta as instâncias vivas, de fora para dentro.
  */
-export function __hmrComponents(file: string, comps: Record<string, unknown>, options: HmrOptions = {}): void {
-  if (!DEV) return
+export function __hmrComponents<T extends Record<string, unknown>>(
+  file: string,
+  comps: T,
+  options: HmrOptions = {},
+): T {
+  if (!DEV) return comps
   if (!installed) {
     installed = true
     setHmrComponentHook(componentHook)
@@ -177,7 +181,7 @@ export function __hmrComponents(file: string, comps: Record<string, unknown>, op
     byComp.set(f.Comp, f)
     pending.push([f, [...f.instances]])
   }
-  if (!pending.length) return
+  if (!pending.length) return comps
   const all = pending.flatMap(([f, list]) => list.map((inst) => [f, inst] as const))
   all.sort((a, b) => depth(a[1]) - depth(b[1]))
   const reports = new Map<Family, { preserved: Set<string>; reset: Set<string>; count: number }>()
@@ -200,6 +204,7 @@ export function __hmrComponents(file: string, comps: Record<string, unknown>, op
       : `preservado: ${[...r.preserved].join(', ') || '—'}; resetado: ${[...r.reset].join(', ') || '—'}`
     console.info(`[jotastic] HMR ${f.name} (${r.count}×): ${what}`)
   }
+  return comps
 }
 
 /** Interno (testes): esquece as famílias registradas e desliga os hooks. */

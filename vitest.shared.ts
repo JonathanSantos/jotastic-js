@@ -4,6 +4,7 @@ const src = (p: string) => fileURLToPath(new URL(`./packages/${p}`, import.meta.
 
 /** Aliases para os testes rodarem contra o código-fonte (sem build). */
 export const alias = [
+  { find: /^jotastic\/runtime\/hmr$/, replacement: src('jotastic/src/runtime/hmr.ts') },
   { find: /^jotastic\/runtime$/, replacement: src('jotastic/src/runtime/index.ts') },
   { find: /^jotastic\/store$/, replacement: src('jotastic/src/store.ts') },
   { find: /^jotastic\/fetch$/, replacement: src('jotastic/src/fetch.ts') },

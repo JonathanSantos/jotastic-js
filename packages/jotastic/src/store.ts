@@ -1,17 +1,18 @@
 // `jotastic/store`: store global reativo à la Zustand, sem seletores (o proxy rastreia por propriedade).
 //
-// - A factory roda uma vez (sem rastrear). Propriedades: funções → ações; getters → memos (criados no 1º acesso,
-//   sem owner, para viverem tanto quanto o store); resto → estado num objeto reativo (`reactive`).
+// - `createStore(state, members)` (D62): `state` (objeto ou função) vira um objeto reativo (`reactive`); `members` roda
+//   uma vez (sem rastrear): getters → memos (criados no 1º acesso, sem owner, para viverem tanto quanto o store);
+//   funções → ações.
 // - O store e `get()` são a mesma visão: dentro de uma ação o estado é mutável; fora, readonly (em dev avisa
 //   `store-mutated-outside-action`; em prod a escrita passa).
-// - Ação = `batch` + flag `inAction` + `flush()` ao sair do batch mais externo (uma rodada de atualização).
-//   Ação async: só o trecho síncrono até o 1º `await` fica dentro; depois, cada `set` é seu próprio batch/flush.
+// - Ação = `batch` + flag `inAction`. Sem flush síncrono (D61): o DOM atualiza no microtask, como no resto da lib.
+//   Ação async: só o trecho síncrono até o 1º `await` fica dentro; depois, `set` funciona sem contexto de ação.
 
 import { devtoolsHook, emitDevtools } from './runtime/devtools'
 import { DEV } from './runtime/env'
 import { runWithOwner } from './runtime/owner'
 import { reactive, readonly } from './runtime/proxy'
-import { batch, flush, memo, untrack, type Memo } from './runtime/reactive'
+import { batch, memo, untrack, type Memo } from './runtime/reactive'
 import type { SetFn, Store } from './public-types'
 
 export type { DeepReadonly, SetFn, Store } from './public-types'
@@ -57,21 +58,28 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Cria o store. `factory` roda uma vez; ver `docs/spec/08-store.md`.
+ * Cria o store (D62). `state` (objeto ou função que o devolve) é o estado reativo; `members(set, get)` roda uma vez
+ * e devolve getters (memos) e ações. Ver `docs/spec/08-store.md`.
  * `set`: objeto → merge raso; função com retorno objeto → merge do retorno; função sem retorno → mutações no draft.
  */
-export function createStore<S extends object>(
-  factory: (set: SetFn<S>, get: () => S) => S,
+export function createStore<S extends object, M extends object = {}>(
+  initial: S | (() => S),
+  members?: (set: SetFn<S>, get: () => S) => M,
   options?: StoreOptions,
-): Store<S> {
+): Store<S, M> {
   const name = options?.name ?? 'store'
   const state = reactive<Dict>({})
   const ro = readonly(state, 'store-mutated-outside-action', { name })
   const getters = new Map<PropertyKey, () => unknown>()
   const memos = new Map<PropertyKey, Memo<unknown>>()
   const actions = new Map<PropertyKey, AnyFn>()
+  /** Membros que não são getter nem função: expostos como estão (não são estado). */
+  const consts = new Map<PropertyKey, unknown>()
+  /** Objeto inicial copiado: as mutações do estado não o alcançam, então `$reset` volta a ele. */
+  const seed = typeof initial === 'function' ? undefined : (clone(initial) as Dict)
+  const fresh = (): Dict => (seed ? (clone(seed) as Dict) : (clone(untrack(initial as () => S)) as Dict))
 
-  /** Roda `fn` como ação: flag + batch + flush ao fim do batch mais externo. */
+  /** Roda `fn` como ação: flag + batch. Sem flush síncrono (D61): o DOM atualiza no microtask. */
   const inAction = <T>(fn: () => T): T =>
     batch(() => {
       actionDepth++
@@ -79,7 +87,6 @@ export function createStore<S extends object>(
         return fn()
       } finally {
         actionDepth--
-        flush()
       }
     })
 
@@ -97,11 +104,14 @@ export function createStore<S extends object>(
     return m.get()
   }
 
+  const isMember = (key: PropertyKey): boolean => getters.has(key) || actions.has(key) || consts.has(key)
+
   const view: Dict = new Proxy<Dict>(Object.create(null), {
     get(_t, key) {
       if (getters.has(key)) return readMemo(key)
       const a = actions.get(key)
       if (a) return a
+      if (consts.has(key)) return consts.get(key)
       if (key in api) return api[key as keyof typeof api]
       return base()[key]
     },
@@ -112,14 +122,14 @@ export function createStore<S extends object>(
       return Reflect.deleteProperty(base(), key)
     },
     has(_t, key) {
-      return getters.has(key) || actions.has(key) || key in state
+      return isMember(key) || key in state
     },
     ownKeys() {
-      return [...Reflect.ownKeys(state), ...getters.keys(), ...actions.keys()] as (string | symbol)[]
+      return [...Reflect.ownKeys(state), ...getters.keys(), ...actions.keys(), ...consts.keys()] as (string | symbol)[]
     },
     getOwnPropertyDescriptor(_t, key): PropertyDescriptor | undefined {
-      if (getters.has(key) || actions.has(key) || Object.hasOwn(state, key))
-        return { configurable: true, enumerable: true, writable: !actions.has(key), value: view[key] }
+      if (isMember(key) || Object.hasOwn(state, key))
+        return { configurable: true, enumerable: true, writable: !isMember(key), value: view[key] }
       return undefined
     },
   })
@@ -129,7 +139,7 @@ export function createStore<S extends object>(
   const merge = (partial: unknown): void => {
     if (typeof partial !== 'object' || partial === null) return
     for (const k of Object.keys(partial)) {
-      if (getters.has(k) || actions.has(k)) continue
+      if (isMember(k)) continue
       state[k] = (partial as Dict)[k]
     }
   }
@@ -150,20 +160,10 @@ export function createStore<S extends object>(
     emitDevtools({ type: 'store:action', store: name, action, args, changed })
   }
 
-  /** Copia o estado inicial de uma definição para o objeto reativo. */
-  const load = (def: object, init: boolean): void => {
-    const keys = new Set<PropertyKey>()
-    for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(def))) {
-      if (d.get) {
-        if (init) getters.set(k, d.get)
-      } else if (typeof d.value === 'function') {
-        if (init) actions.set(k, wrapAction(k, d.value))
-      } else {
-        keys.add(k)
-        state[k] = d.value
-      }
-    }
-    if (!init) for (const k of Object.keys(state)) if (!keys.has(k)) delete state[k]
+  /** Substitui o estado pelo objeto dado (chaves ausentes são removidas). */
+  const load = (next: Dict): void => {
+    for (const k of Object.keys(state)) if (!Object.hasOwn(next, k)) delete state[k]
+    for (const k of Object.keys(next)) state[k] = next[k]
   }
 
   const wrapAction = (key: string, fn: AnyFn): AnyFn =>
@@ -175,32 +175,26 @@ export function createStore<S extends object>(
     }
 
   const api = {
-    $snapshot: (): S => {
-      const o = clone(state) as Dict
-      for (const k of getters.keys()) o[k as string] = clone(untrack(() => readMemo(k)))
-      return o as S
-    },
+    $snapshot: (): S => clone(state) as S,
     $reset: (): void => {
       const before = DEV && devtoolsHook() ? clone(state) : undefined
-      inAction(() =>
-        load(
-          untrack(() => factory(set, get)),
-          false,
-        ),
-      )
+      inAction(() => load(fresh()))
       if (before) emitAction('$reset', [], before)
     },
     $name: name,
   }
 
-  inAction(() =>
-    load(
-      untrack(() => factory(set, get)),
-      true,
-    ),
-  )
+  inAction(() => load(fresh()))
+  if (members) {
+    const def = untrack(() => members(set, get))
+    for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(def))) {
+      if (d.get) getters.set(k, d.get)
+      else if (typeof d.value === 'function') actions.set(k, wrapAction(k, d.value))
+      else consts.set(k, d.value)
+    }
+  }
   if (DEV) hmrState.set(view, state)
-  return view as unknown as Store<S>
+  return view as unknown as Store<S, M>
 }
 
 // ─── HMR (dev) ───────────────────────────────────────────────────────────────

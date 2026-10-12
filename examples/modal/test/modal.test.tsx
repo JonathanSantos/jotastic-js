@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, tick } from '@jotastic/test'
 import { DeleteAccount } from '../src/Modal'
-import { api } from '../src/api'
+import { api } from '../../lib/api'
 
 afterEach(() => {
   cleanup()

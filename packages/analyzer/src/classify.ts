@@ -34,13 +34,13 @@ function hasGetter(o: t.ObjectExpression): boolean {
   return o.properties.some((p) => t.isObjectMethod(p) && p.kind === 'get')
 }
 
-function assignmentIsPrimitive(v: NodePath, name: string): boolean {
+function assignmentIsPrimitive(v: NodePath, name: string, isPrimitiveId: (id: t.Identifier) => boolean): boolean {
   if (v.isUpdateExpression()) return true
   if (v.isAssignmentExpression()) {
     const { left, right, operator } = v.node
     if (!t.isIdentifier(left) || left.name !== name) return false
     if (operator === '=' || operator === '||=' || operator === '&&=' || operator === '??=')
-      return isProbablyPrimitive(right)
+      return isProbablyPrimitive(right, isPrimitiveId)
     return true // aritméticos compostos
   }
   return false
@@ -66,7 +66,7 @@ export function classifyBody(scope: BodyScope, flow: FlowResult): Classification
       if (!filter(e)) continue
       for (const r of e.binding.referencePaths) {
         if (!within(r.node, node)) continue
-        if (skipFunctions) {
+        if (skipFunctions && r.node !== node) {
           let p = r.parentPath
           let inFn = false
           while (p && p.node !== node) {
@@ -84,6 +84,10 @@ export function classifyBody(scope: BodyScope, flow: FlowResult): Classification
 
   const fnBindings = new Set(scope.rootFunctions.values())
 
+  // D60: identificador que lê outro `let` já classificado `signal` também é primitivo (ponto fixo mínimo).
+  let signalRefs = new Set<t.Node>()
+  const isPrimitiveId = (id: t.Identifier) => signalRefs.has(id)
+
   const classify = (d: RootDecl, liveLets: Set<string>): BindingKind => {
     const init = d.declarator.node.init
     if (init && findAwaits(init).length > 0) return 'resource'
@@ -92,8 +96,8 @@ export function classifyBody(scope: BodyScope, flow: FlowResult): Classification
       if (!liveLets.has(d.name)) return 'plain'
       const primitive =
         t.isIdentifier(d.declarator.node.id) &&
-        (!init || isProbablyPrimitive(init)) &&
-        d.binding.constantViolations.every((v) => assignmentIsPrimitive(v, d.name)) &&
+        (!init || isProbablyPrimitive(init, isPrimitiveId)) &&
+        d.binding.constantViolations.every((v) => assignmentIsPrimitive(v, d.name, isPrimitiveId)) &&
         !(scope.twoWayLets.get(d.name) ?? []).includes('multiple')
       return primitive ? 'signal' : 'state'
     }
@@ -139,9 +143,20 @@ export function classifyBody(scope: BodyScope, flow: FlowResult): Classification
   const makeCtx = (): LiveContext => ({ scope, flow, kinds, fnLive: new Map() })
   let liveLets = new Set(scope.decls.filter((d) => d.isLet).map((d) => d.name))
   let ctx = makeCtx()
+  const classifyAll = () => {
+    signalRefs = new Set()
+    for (let pass = 0; pass < 50; pass++) {
+      kinds = new Map()
+      for (const d of scope.decls) kinds.set(d.name, classify(d, liveLets))
+      const next = new Set<t.Node>()
+      for (const d of scope.decls)
+        if (d.isLet && kinds.get(d.name) === 'signal') for (const r of d.binding.referencePaths) next.add(r.node)
+      if (next.size === signalRefs.size) break
+      signalRefs = next
+    }
+  }
   for (let guard = 0; guard < 50; guard++) {
-    kinds = new Map()
-    for (const d of scope.decls) kinds.set(d.name, classify(d, liveLets))
+    classifyAll()
     ctx = makeCtx()
     const next = new Set<string>()
     for (const d of scope.decls) {

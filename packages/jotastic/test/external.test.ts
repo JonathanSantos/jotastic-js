@@ -156,6 +156,29 @@ describe('external / on / onMount (E1–E5)', () => {
     expect(remove).toHaveBeenCalledWith(custom)
   })
 
+  test('X-5 valor função é chamado como destroy (subscribe → unsubscribe), na recriação e no dispose', () => {
+    const topic = signal('a')
+    const log: string[] = []
+    const root = inRoot((r) => {
+      external(() => {
+        const t = topic.get()
+        log.push(`subscribe:${t}`)
+        return () => log.push(`unsubscribe:${t}`)
+      })
+      return r
+    })
+    flush()
+    topic.set('b')
+    flush()
+    dispose(root)
+    expect(log).toEqual(['subscribe:a', 'unsubscribe:a', 'subscribe:b', 'unsubscribe:b'])
+
+    const fn = Object.assign(vi.fn(), { destroy: vi.fn() })
+    autoDestroy(fn)
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(fn.destroy).not.toHaveBeenCalled()
+  })
+
   test('E4 on com alvo lazy: re-liga quando o alvo muda; remove no dispose; alvo undefined → nada', () => {
     const a = document.createElement('div')
     const b = document.createElement('div')

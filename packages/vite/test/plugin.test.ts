@@ -26,8 +26,8 @@ const LOOP_RETURN = `export function List({ items }: { items: string[] }) {
 
 const STORE = `import { createStore } from 'jotastic/store'
 
-export const cart = createStore((set) => ({ items: [] as string[], add: (x: string) => set((s) => ({ items: [...s.items, x] })) }))
-export const ui: Store<{ open: boolean }> = createStore<{ open: boolean }>(() => ({ open: false }))
+export const cart = createStore({ items: [] as string[] }, (set) => ({ add: (x: string) => set((s) => ({ items: [...s.items, x] })) }))
+export const ui: Store<{ open: boolean }, {}> = createStore<{ open: boolean }>(() => ({ open: false }))
 `
 
 /** Contexto mínimo de plugin: `error` lança o objeto recebido, `warn` acumula. */
@@ -210,7 +210,7 @@ describe('@jotastic/vite', () => {
       expect(out.code).toContain('if (import.meta.hot) {')
       expect(out.code).toContain('import.meta.hot.accept()')
       expect(out.code).toMatch(/__hmrComponents\('\/app\/src\/Counter\.tsx', \{\s*Counter\s*\}\)/)
-      expect(out.code).toMatch(/import \{[^}]*__hmrComponents[^}]*\} from 'jotastic\/runtime'/)
+      expect(out.code).toMatch(/import \{[^}]*__hmrComponents[^}]*\} from 'jotastic\/runtime\/hmr'/)
       // hash do inicializador do `let` (preserveState decide no runtime)
       expect(out.code).toMatch(/hash: '[0-9a-z]+'/)
     })

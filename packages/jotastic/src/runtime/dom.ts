@@ -651,7 +651,11 @@ export function spread(el: Element, read: () => Record<string, unknown>): void {
             }
           }
         }
-        for (const k of keys) if (!bindings.has(k)) bindings.set(k, bindKey(el, k, src, owner))
+        // Bindings por chave vivem no owner do `spread`, não na execução do efeito externo (que é um escopo):
+        // sobrevivem às reexecuções e saem só quando a chave some ou no dispose.
+        runWithOwner(owner, () => {
+          for (const k of keys) if (!bindings.has(k)) bindings.set(k, bindKey(el, k, src, owner))
+        })
       })
     },
     { kind: 'render' },

@@ -1,17 +1,8 @@
 // [ajuste] Backend simulado: troca `globalThis.fetch` por um handler de `/api/*` com latência e modo de erro.
-// O `api.ts` usa `jotastic/fetch` de verdade (anexa o abortSignal do recurso), então o cancelamento é real:
+// O `examples/lib/api.ts` usa `jotastic/fetch` de verdade (anexa o abortSignal do recurso), então o cancelamento é real:
 // uma requisição abortada rejeita com `AbortError` e nunca responde.
 
-export interface User {
-  id: string
-  name: string
-}
-export interface Post {
-  id: string
-  title: string
-  published: boolean
-  tagId: number
-}
+import type { Post, User } from '../../lib/api'
 
 const users: Record<string, User> = {
   '1': { id: '1', name: 'Ana' },
@@ -40,7 +31,7 @@ export interface PendingRequest {
 export const server = {
   /** ms até responder; `Infinity` = só com `respond()`/`respondAll()` (testes) */
   latency: 600,
-  /** modo de erro: toda resposta vira 500 */
+  /** modo de erro: toda requisição falha (erro de rede) */
   fail: false,
   requests: [] as PendingRequest[],
   respondAll() {
@@ -56,11 +47,15 @@ export const server = {
   },
 }
 
+// Erros HTTP levam a mensagem em `statusText`: é o que `examples/lib/api.ts` usa no `Error`.
 const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  new Response(JSON.stringify(body), {
+    status,
+    statusText: status >= 400 ? (body as { message: string }).message : '',
+    headers: { 'content-type': 'application/json' },
+  })
 
 function route(method: string, path: string, body: string | undefined): Response {
-  if (server.fail) return json(500, { message: 'Servidor indisponível' })
   let m: RegExpMatchArray | null
   if ((m = path.match(/^\/api\/users\/(\w+)$/))) {
     const user = users[m[1]!]
@@ -99,7 +94,10 @@ function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
         if (req.done) return
         req.done = true
         clearTimeout(timer)
-        resolve(route(method, path, typeof init?.body === 'string' ? init.body : undefined))
+        // Modo de erro = falha de rede (como o `fetch` real: rejeita com TypeError). Assim até `rename`, que em
+        // `lib/api.ts` ignora o status da resposta, falha.
+        if (server.fail) reject(new TypeError('Servidor indisponível'))
+        else resolve(route(method, path, typeof init?.body === 'string' ? init.body : undefined))
       },
     }
     signal?.addEventListener('abort', () => {

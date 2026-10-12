@@ -1,0 +1,12 @@
+[
+  {
+    "id": "slot-mixed-branch",
+    "level": "hint",
+    "loc": {
+      "line": 6,
+      "column": 8,
+      "endLine": 6,
+      "endColumn": 78
+    }
+  }
+]

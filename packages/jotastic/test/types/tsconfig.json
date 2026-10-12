@@ -4,10 +4,11 @@
     "jsx": "preserve",
     "jsxImportSource": "jotastic",
     "paths": {
-      "jotastic": ["./jotastic.d.ts"],
+      "jotastic": ["../../src/index.ts"],
+      "jotastic/runtime": ["../../src/runtime/index.ts"],
       "jotastic/jsx-runtime": ["../../src/jsx-runtime.d.ts"],
       "jotastic/store": ["./store.d.ts"],
-      "jotastic/fetch": ["./fetch.d.ts"]
+      "jotastic/fetch": ["../../src/fetch.ts"]
     }
   },
   "files": [
@@ -16,14 +17,14 @@
     "../../../../docs/spec/examples/01-counter.tsx",
     "../../../../docs/spec/examples/02-todos.tsx",
     "../../../../docs/spec/examples/03-form.tsx",
-    "./patched/05-styling.tsx",
-    "./patched/06-async.tsx",
-    "../../../../docs/spec/examples/07-use-functions.ts",
+    "../../../../docs/spec/examples/05-styling.tsx",
+    "../../../../docs/spec/examples/06-async.tsx",
+    "./patched/07-use-functions.ts",
     "./patched/08-store.ts",
     "./patched/08-store-usage.tsx",
     "../../../../docs/spec/examples/09-external.tsx",
     "./patched/10-modal.tsx",
-    "./patched/13-slots.tsx",
+    "../../../../docs/spec/examples/13-slots.tsx",
     "../../../../docs/spec/examples/14-use-form.ts"
   ]
 }

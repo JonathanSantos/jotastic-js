@@ -136,7 +136,7 @@ describe('examples/async: Dashboard, Search', () => {
 
   it('Search: digitar não refaz a busca até o debounce; o estado antes do await sobrevive à recarga', async () => {
     const { container } = render(
-      <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e as Error} onRetry={retry} />}>
+      <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e} onRetry={retry} />}>
         <Search />
       </Boundary>,
     )
@@ -163,7 +163,7 @@ describe('examples/async: Dashboard, Search', () => {
 describe('examples/async: Profile (optimistic update)', () => {
   async function mountProfile() {
     const { container } = render(
-      <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e as Error} onRetry={retry} />}>
+      <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e} onRetry={retry} />}>
         <Profile id="1" />
       </Boundary>,
     )

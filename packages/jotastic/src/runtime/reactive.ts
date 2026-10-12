@@ -7,6 +7,7 @@
 import { devtoolsHook, emitDevtools, stats, warn } from './devtools'
 import { DEV } from './env'
 import {
+  disposeScope,
   getOwner,
   handleError,
   jotasticError,
@@ -16,7 +17,11 @@ import {
   type Cleanup,
   type DevMeta,
   type Dispose,
+  type BoundaryHandle,
+  type Disposable,
+  type ErrorInfo,
   type Owner,
+  type OwnerImpl,
 } from './owner'
 import { readonly, toReactive } from './proxy'
 import { shallowEqual } from './shallow'
@@ -262,11 +267,11 @@ class MemoNode<T> implements Memo<T> {
       if (changed) this.value = next as T
     }
     if (DEV) {
-      if (!first && changed && !this.warnedInstance && isClassInstance(next)) {
+      if (!first && changed && !this.warnedInstance && hasLifecycle(next)) {
         this.warnedInstance = true
         warn(
           'derived-recreates-instance',
-          `o derivado${this.dev?.name ? ` "${this.dev.name}"` : ''} recria uma instância de classe a cada mudança; use external com update`,
+          `o derivado${this.dev?.name ? ` "${this.dev.name}"` : ''} recria uma instância com ciclo de vida a cada mudança (a anterior não é destruída); use external com update`,
           this.dev?.loc,
         )
       }
@@ -282,8 +287,14 @@ class MemoNode<T> implements Memo<T> {
   }
 }
 
-function isClassInstance(v: unknown): boolean {
-  return typeof v === 'object' && v !== null && !isPlainOrArray(v)
+/** Métodos que indicam um recurso com ciclo de vida (C-2). Objetos de plataforma sem eles (MediaQueryList) não avisam. */
+const LIFECYCLE = ['destroy', 'dispose', 'disconnect', 'close', 'unsubscribe', 'abort'] as const
+
+/** Instância (não POJO/array) com algum método de ciclo de vida: recriá-la a cada mudança provavelmente vaza. */
+function hasLifecycle(v: unknown): boolean {
+  if (typeof v !== 'object' || v === null || isPlainOrArray(v)) return false
+  for (const m of LIFECYCLE) if (typeof (v as Record<string, unknown>)[m] === 'function') return true
+  return false
 }
 
 /**
@@ -320,7 +331,12 @@ export function memo<T>(fn: () => T, opts?: MemoOptions<T>): Memo<T> {
 
 // ─── Effect ──────────────────────────────────────────────────────────────────
 
-class EffectNode {
+/**
+ * O efeito é um escopo (D-N4/N5, modelo do Solid): durante `run` ele é o owner atual, então `onCleanup`, efeitos, memos
+ * e owners criados na execução pertencem a ela e são descartados antes da próxima e no dispose. Sem alocação extra:
+ * os campos de owner ficam vazios até alguém registrar algo.
+ */
+class EffectNode implements OwnerImpl {
   readonly id = nextId()
   state: State = CLEAN
   sources = new Set<Source>()
@@ -331,14 +347,26 @@ class EffectNode {
   /** Loop guard: flush em que `runs` foi contado. */
   stamp = 0
   runs = 0
+  // Owner (escopo da execução corrente). Sem `name`: `handleError` usa o nome do componente acima.
+  readonly kind = 'effect' as const
+  context: Map<symbol, unknown> | null = null
+  children: Set<OwnerImpl> | null = null
+  disposables: Disposable[] | null = null
+  onError: ((error: unknown, info: ErrorInfo) => void) | null = null
+  declare readonly depth: number
+  declare boundary: BoundaryHandle | null
   declare private fn: () => void | Cleanup
-  declare readonly owner: Owner | null
-  declare readonly kind: 'render' | 'user'
+  /** Owner onde o efeito foi criado (o `parent` do escopo). */
+  declare readonly parent: Owner | null
+  /** Fila: `render` (bindings, primeira execução síncrona) ou `user`. */
+  declare readonly type: 'render' | 'user'
 
-  constructor(fn: () => void | Cleanup, owner: Owner | null, kind: 'render' | 'user') {
+  constructor(fn: () => void | Cleanup, parent: Owner | null, kind: 'render' | 'user') {
     this.fn = fn
-    this.owner = owner
-    this.kind = kind
+    this.parent = parent
+    this.depth = parent ? parent.depth + 1 : 0
+    this.boundary = parent ? parent.boundary : null
+    this.type = kind
   }
 
   run(): void {
@@ -348,7 +376,7 @@ class EffectNode {
     const prevObserver = currentObserver
     const prevEffect = currentEffect
     const prevAmbient = ambientSignal
-    const prevOwner = setOwner(this.owner)
+    const prevOwner = setOwner(this)
     currentObserver = this
     currentEffect = this
     ambientSignal = null
@@ -358,7 +386,7 @@ class EffectNode {
       const r = this.fn()
       if (typeof r === 'function') this.cleanup = r
     } catch (e) {
-      handleError(this.owner, e, this.kind === 'render' ? 'binding' : 'effect')
+      handleError(this.parent, e, this.type === 'render' ? 'binding' : 'effect')
     } finally {
       currentObserver = prevObserver
       currentEffect = prevEffect
@@ -372,20 +400,26 @@ class EffectNode {
     }
   }
 
-  /** Roda o cleanup devolvido pela última execução (sem rastrear) e aborta o `abortSignal()` dela. */
+  /**
+   * Fim da execução anterior (sem rastrear): aborta o `abortSignal()` dela, roda o cleanup devolvido e descarta o
+   * escopo (owners filhos, efeitos/memos internos, `onCleanup`), nessa ordem.
+   */
   private runCleanup(): void {
     const c = this.cleanup
     const ctrl = this.controller
     this.cleanup = null
     this.controller = null
     if (ctrl) ctrl.abort()
-    if (c) {
-      const prev = currentObserver
-      currentObserver = null
+    if (!c && !this.children && !this.disposables) return
+    const prev = currentObserver
+    currentObserver = null
+    try {
+      if (c) c()
+    } catch (e) {
+      handleError(this.parent, e, 'effect')
+    } finally {
       try {
-        c()
-      } catch (e) {
-        handleError(this.owner, e, 'effect')
+        disposeScope(this)
       } finally {
         currentObserver = prev
       }
@@ -430,6 +464,9 @@ export function effect(fn: () => void | Cleanup, opts?: EffectOptions): Dispose 
   else mark(e, DIRTY)
   return () => e.dispose()
 }
+
+/** Thunk compartilhado para parâmetros ausentes de `use*` (D59): `function useX(a = _void)`. */
+export const _void = (): undefined => undefined
 
 // ─── Rastreamento ────────────────────────────────────────────────────────────
 
@@ -495,7 +532,7 @@ let tickResolvers: (() => void)[] = []
 function enqueue(e: EffectNode): void {
   if (e.queued || e.disposed) return
   e.queued = true
-  ;(e.kind === 'render' ? renderQueue : userQueue).push(e)
+  ;(e.type === 'render' ? renderQueue : userQueue).push(e)
   if (!scheduled) {
     scheduled = true
     queueMicrotask(onMicrotask)
@@ -536,7 +573,7 @@ export function flush(): void {
     let e: EffectNode | undefined
     while ((e = renderQueue.shift() ?? userQueue.shift()) !== undefined) {
       e.queued = false
-      if (e.disposed || (e.owner && e.owner.disposed)) continue
+      if (e.disposed || (e.parent && e.parent.disposed)) continue
       resolveCheck(e)
       if (e.state !== DIRTY) continue
       if (e.stamp !== id) {
@@ -547,7 +584,7 @@ export function flush(): void {
         // Interrompe o ciclo: o efeito continua assinado, mas não roda de novo neste flush.
         e.state = CLEAN
         handleError(
-          e.owner,
+          e.parent,
           jotasticError('effect-loop', DEV ? `efeito executou ${LOOP_LIMIT} vezes no mesmo flush` : ''),
           'effect',
         )

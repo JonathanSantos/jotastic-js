@@ -3,17 +3,7 @@ import { watch } from 'jotastic'
 import './button.css'
 
 // Tema global em store (lido por qualquer componente, sem Provider)
-// [ajuste] T-4 (21-pendencias): createStore não infere S quando a factory usa `get()`; tipo explícito
-interface ThemeState {
-  mode: 'light' | 'dark'
-  accent: string
-  readonly isDark: boolean
-  toggle(): void
-  setAccent(accent: string): void
-}
-export const theme = createStore<ThemeState>((set, get) => ({
-  mode: 'light' as 'light' | 'dark',
-  accent: '#6750a4',
+export const theme = createStore({ mode: 'light' as 'light' | 'dark', accent: '#6750a4' }, (set, get) => ({
   get isDark() {
     return get().mode === 'dark'
   },
@@ -78,11 +68,7 @@ export function Heatmap({ cells }: { cells: { id: string; v: number }[] }) {
   return (
     <div class="grid">
       {cells.map((c) => (
-        <div
-          class="cell"
-          style={{ background: `hsl(${200 - c.v * 2} 80% 50%)` }}
-          title={String(c.v) /* [ajuste] title é string */}
-        />
+        <div class="cell" style={{ background: `hsl(${200 - c.v * 2} 80% 50%)` }} title={c.v} />
       ))}
     </div>
   )
@@ -96,7 +82,6 @@ export function ThemeToggle() {
   )
 }
 
-// [ajuste] interface não pode estender tipo indexado (TS2499)
 type ButtonProps = JSX.IntrinsicElements['button'] & {
   variant?: 'primary' | 'secondary' | 'ghost'
   size?: 'sm' | 'md' | 'lg'

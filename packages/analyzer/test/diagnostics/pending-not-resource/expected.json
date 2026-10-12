@@ -1,0 +1,12 @@
+[
+  {
+    "id": "pending-not-resource",
+    "level": "error",
+    "loc": {
+      "line": 4,
+      "column": 36,
+      "endLine": 4,
+      "endColumn": 49
+    }
+  }
+]

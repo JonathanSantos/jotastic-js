@@ -6,6 +6,8 @@ const base: Options = {
   entry: {
     index: 'src/index.ts',
     runtime: 'src/runtime/index.ts',
+    // Subpath interno de HMR (D65): só o rodapé que o compilador emite em dev importa. Em prod é no-op.
+    'runtime/hmr': 'src/runtime/hmr.ts',
     store: 'src/store.ts',
     fetch: 'src/fetch.ts',
   },

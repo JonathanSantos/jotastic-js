@@ -114,8 +114,8 @@ test('useMediaQuery: valor inicial, evento change, troca de query move o listene
   query.set('(min-width: 900px)')
   await tick()
   expect(mqls).toHaveLength(2)
-  // Pendência (relatório): `mql` é um memo que devolve instância de classe → em dev avisa derived-recreates-instance
-  expect(warn.mock.calls.some((c) => String(c[0]).includes('derived-recreates-instance'))).toBe(true)
+  // C-2: `mql` é um memo que devolve instância de classe, mas sem método de ciclo de vida → não avisa
+  expect(warn.mock.calls.some((c) => String(c[0]).includes('derived-recreates-instance'))).toBe(false)
   warn.mockRestore()
   mqls[1]!.change(true)
   await tick()

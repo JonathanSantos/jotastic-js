@@ -2,8 +2,10 @@ import { describe, expect, test } from 'vitest'
 import {
   createContext,
   createOwner,
+  dispose,
   effect,
   flush,
+  memo,
   mergeProps,
   provide,
   rest,
@@ -113,11 +115,11 @@ describe('contexto', () => {
   test('useContext sobe a cadeia de owners; Provider mais próximo vence', () => {
     const Ctx = createContext<string>()
     const root = createOwner('root', null)
-    runWithOwner(root, () => provide(Ctx, 'root'))
+    runWithOwner(root, () => provide(Ctx, () => 'root'))
     const child = createOwner('component', root)
     const grand = createOwner('component', child)
     expect(runWithOwner(grand, () => useContext(Ctx))).toBe('root')
-    runWithOwner(child, () => provide(Ctx, 'child'))
+    runWithOwner(child, () => provide(Ctx, () => 'child'))
     expect(runWithOwner(grand, () => useContext(Ctx))).toBe('child')
     expect(runWithOwner(root, () => useContext(Ctx))).toBe('root')
   })
@@ -130,8 +132,30 @@ describe('contexto', () => {
     expect(() => runWithOwner(root, () => useContext(NoDefault))).toThrow(/context-missing/)
   })
 
+  test('I-3: provide guarda um memo do getter; useContext lido num contexto rastreado acompanha', () => {
+    const Ctx = createContext<string>()
+    const theme = signal('claro')
+    const root = createOwner('root', null)
+    const seen: string[] = []
+    let calls = 0
+    runWithOwner(root, () => {
+      provide(Ctx, () => (calls++, theme.get()))
+      const comp = createOwner('component', root)
+      runWithOwner(comp, () => {
+        const value = memo(() => useContext(Ctx))
+        effect(() => void seen.push(value.get()), { kind: 'render' })
+      })
+    })
+    expect(seen).toEqual(['claro'])
+    theme.set('escuro')
+    flush()
+    expect(seen).toEqual(['claro', 'escuro'])
+    expect(calls).toBe(2)
+    dispose(root)
+  })
+
   test('provide fora de owner → erro em dev', () => {
     const Ctx = createContext(1)
-    expect(() => provide(Ctx, 2)).toThrow(/use-outside-owner/)
+    expect(() => provide(Ctx, () => 2)).toThrow(/use-outside-owner/)
   })
 })

@@ -6,8 +6,6 @@
  * `JSX.Element` sem import (como nos exemplos da spec). Não há `jsx()` em runtime: quem consome o JSX é o compilador.
  */
 
-type DOMElement = globalThis.Element
-
 /** Tags HTML/SVG com tipagem explícita abaixo; as demais vêm de `HTMLElementTagNameMap`/`SVGElementTagNameMap`. */
 type ExplicitTags =
   | 'a'
@@ -147,11 +145,7 @@ interface CamelEventNames {
 type CamelEvent<K extends string> = K extends keyof CamelEventNames ? CamelEventNames[K] : Capitalize<K>
 
 export namespace JSX {
-  /** Valor que um componente/expressão pode produzir. Opaco para o dev; o compilador garante lazy. */
-  /**
-   * Ajuste em relação ao contrato (`Node[]` → `Element[]`): vários filhos mistos (`{count} (dobro: {double})`) e
-   * `{items.map(...)}` produzem um array de `Element`, não só de `Node`.
-   */
+  /** Valor que um componente/expressão pode produzir (arrays recursivos, T-1). Opaco para o dev; o compilador garante lazy. */
   type Element = Node | Element[] | string | number | boolean | null | undefined | (() => Element)
 
   /** Permite `async function Comp()` (TS 5.1+): componentes podem devolver Promise<Element>. */
@@ -171,7 +165,7 @@ export namespace JSX {
 
   // ── Eventos ──────────────────────────────────────────────────────────────
   /** `onClick` → click; `onClickCapture` → capture. `currentTarget` tipado pelo elemento. */
-  type EventHandler<T, E extends Event> = (e: E & { currentTarget: T; target: DOMElement }) => unknown
+  type EventHandler<T, E extends Event> = (e: E & { currentTarget: T; target: globalThis.Element }) => unknown
   type EventAttributes<T> = {
     [K in keyof HTMLElementEventMap as `on${CamelEvent<K>}` | `on${CamelEvent<K>}Capture`]?: EventHandler<
       T,
@@ -208,7 +202,7 @@ export namespace JSX {
    */
   interface HTMLAttributes<T> extends DOMAttributes<T> {
     id?: string
-    title?: string
+    title?: string | number
     lang?: string
     dir?: 'ltr' | 'rtl' | 'auto'
     tabIndex?: number
@@ -322,7 +316,7 @@ export namespace JSX {
   }
   interface ImgHTMLAttributes<T> extends HTMLAttributes<T> {
     src?: string
-    alt?: string
+    alt?: string | number
     width?: number | string
     height?: number | string
     loading?: 'lazy' | 'eager'

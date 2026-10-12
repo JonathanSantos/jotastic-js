@@ -1,3 +1,4 @@
+import './server'
 import { mount } from 'jotastic'
 import { DeleteAccount } from './Modal'
 

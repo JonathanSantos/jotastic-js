@@ -166,7 +166,7 @@ describe('HMR: registro de componentes', () => {
     const show = signal(true)
     const target = document.createElement('div')
     createRoot(target, () => {
-      provide(Ctx, 'ctx')
+      provide(Ctx, () => 'ctx')
       return [
         component(v1, { id: 1 }),
         branches([[() => show.get(), () => component(v1, { id: 2 })]]),
@@ -230,10 +230,7 @@ describe('HMR: stores', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const data: Record<string, unknown> = {}
     const make = (extra: Record<string, unknown> = {}) =>
-      createStore<{ n: number; items: string[]; inc(): void; readonly double: number }>((set, get) => ({
-        n: 0,
-        items: [],
-        ...extra,
+      createStore({ n: 0, items: [] as string[], ...extra }, (set, get) => ({
         inc: () => set({ n: get().n + 1, items: [...get().items, 'x'] }),
         get double() {
           return get().n * 2

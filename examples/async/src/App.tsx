@@ -41,14 +41,14 @@ export function App() {
 
       <h3>Busca</h3>
       <div class="search">
-        <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e as Error} onRetry={retry} />}>
+        <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e} onRetry={retry} />}>
           <Search />
         </Boundary>
       </div>
 
       <h3>Perfil (rename otimista)</h3>
       <div class="profile">
-        <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e as Error} onRetry={retry} />}>
+        <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e} onRetry={retry} />}>
           <Profile id={userId} />
         </Boundary>
       </div>

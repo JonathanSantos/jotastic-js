@@ -4,6 +4,8 @@
  * - `AnalyzeOptions.code?`: fonte original, opcional, usada só para montar o texto de `fix` que precisa copiar código
  *   (`inner-html-object`, `state-read-in-setup`). Sem ela, esses diagnósticos saem sem `fix`.
  * - `Analysis.topLevelJSX` aceita também `JSXFragment` (ex.: `mount(<>…</>, …)`).
+ * - `FlowNode` de `await` tem `hoisted` (W-5, 18 §10): o compilador precisa saber se iça o `await`.
+ * - `isProbablyPrimitive(node, isPrimitiveId?)`: predicado opcional para identificadores de `let` signal (D60).
  */
 import type {
   AwaitExpression,
@@ -87,7 +89,18 @@ export interface BindingInfo {
 
 export type FlowNode =
   | { kind: 'return'; node: ReturnStatement; cond: Node; branchIndex: number; prelude: Node[] }
-  | { kind: 'await'; node: AwaitExpression; declarator?: VariableDeclarator; reads: Set<string> }
+  | {
+      kind: 'await'
+      node: AwaitExpression
+      declarator?: VariableDeclarator
+      reads: Set<string>
+      /**
+       * W-5: `true` quando o `await` está aninhado no inicializador (`const x = f(await e)`, `(await e).y`) e deve
+       * ser içado para `_rN`, substituído por `_rN.value.get()` no inicializador. `false`: `await` é o inicializador
+       * inteiro ou o statement inteiro.
+       */
+      hoisted: boolean
+    }
   | { kind: 'final'; node: ReturnStatement }
 
 export type DiagnosticLevel = 'error' | 'warning' | 'hint'

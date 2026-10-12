@@ -20,8 +20,8 @@ import {
   type ErrorInfo,
   type Owner,
 } from '../src/runtime/index'
-import { setOnError, setRethrowUnhandled } from '../src/runtime/owner'
-import { withAbortSignal } from '../src/runtime/reactive'
+import { __setTestMode, setOnError } from '../src/runtime/owner'
+import { observerCount, withAbortSignal } from '../src/runtime/reactive'
 
 /** Roda `fn` dentro de um owner raiz (efeitos exigem owner em dev). */
 function inRoot<T>(fn: (root: Owner) => T): T {
@@ -478,6 +478,138 @@ describe('núcleo reativo: extras', () => {
   })
 })
 
+describe('efeito é escopo (N-4/N-5/M-4)', () => {
+  test('onCleanup dentro de watch roda antes da reexecução e não acumula no componente', () => {
+    const a = signal(0)
+    const log: string[] = []
+    const root = inRoot((r) => {
+      effect(() => {
+        const v = a.get()
+        onCleanup(() => log.push(`cleanup:${v}`))
+      })
+      return r
+    })
+    flush()
+    for (let i = 1; i <= 3; i++) {
+      a.set(i)
+      flush()
+    }
+    expect(log).toEqual(['cleanup:0', 'cleanup:1', 'cleanup:2'])
+    dispose(root)
+    expect(log).toEqual(['cleanup:0', 'cleanup:1', 'cleanup:2', 'cleanup:3'])
+  })
+
+  test('efeito interno é descartado na reexecução do externo (não duplica) e no dispose', () => {
+    const outer = signal(0)
+    const inner = signal('x')
+    const runs: string[] = []
+    const root = inRoot((r) => {
+      effect(() => {
+        const o = outer.get()
+        effect(() => void runs.push(`${o}:${inner.get()}`))
+      })
+      return r
+    })
+    flush()
+    expect(runs).toEqual(['0:x'])
+    outer.set(1)
+    flush()
+    expect(runs).toEqual(['0:x', '1:x'])
+    inner.set('y')
+    flush()
+    // só o efeito interno da execução corrente reage
+    expect(runs).toEqual(['0:x', '1:x', '1:y'])
+    dispose(root)
+    inner.set('z')
+    flush()
+    expect(runs).toEqual(['0:x', '1:x', '1:y'])
+  })
+
+  test('memo e owner criados na execução saem junto; getOwner() dentro do efeito tem o owner de criação como pai', () => {
+    const a = signal(0)
+    const b = signal(1)
+    let m!: ReturnType<typeof memo<number>>
+    let child!: Owner
+    let parent: Owner | null = null
+    const root = inRoot((r) => {
+      effect(
+        () => {
+          a.get()
+          m = memo(() => b.get() * 2)
+          child = createOwner('branch')
+          parent = getOwner()!.parent
+        },
+        { kind: 'render' },
+      )
+      return r
+    })
+    expect(parent).toBe(root)
+    const first = m
+    const firstChild = child
+    expect(observerCount(b)).toBe(1)
+    a.set(1)
+    flush()
+    expect(firstChild.disposed).toBe(true)
+    expect(m).not.toBe(first)
+    expect(observerCount(b)).toBe(1) // o memo anterior largou a fonte
+    dispose(root)
+    expect(child.disposed).toBe(true)
+    expect(observerCount(b)).toBe(0)
+  })
+
+  test('ordem: cleanup devolvido, depois o escopo (reverso); useContext/handleError sobem pelo pai', () => {
+    const a = signal(0)
+    const log: string[] = []
+    const errors: [unknown, ErrorInfo][] = []
+    const root = inRoot((r) => {
+      setOnError(r, (e, info) => errors.push([e, info]))
+      effect(() => {
+        a.get()
+        onCleanup(() => log.push('onCleanup:1'))
+        onCleanup(() => log.push('onCleanup:2'))
+        return () => log.push('returned')
+      })
+      effect(() => {
+        if (a.get() === 1) {
+          effect(() => {
+            throw new Error('interno')
+          })
+        }
+      })
+      return r
+    })
+    flush()
+    a.set(1)
+    flush()
+    expect(log).toEqual(['returned', 'onCleanup:2', 'onCleanup:1'])
+    expect(errors.map(([e]) => (e as Error).message)).toEqual(['interno'])
+    expect(errors[0]![1].owner.kind).toBe('effect')
+    dispose(root)
+  })
+})
+
+describe('derived-recreates-instance (C-2)', () => {
+  test('só avisa para instância com método de ciclo de vida', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    class Plain {
+      constructor(readonly q: number) {}
+    }
+    class Conn {
+      constructor(readonly q: number) {}
+      close() {}
+    }
+    const a = signal(0)
+    const plain = memo(() => new Plain(a.get()))
+    const conn = memo(() => new Conn(a.get()))
+    a.set(1)
+    plain.get()
+    expect(warn).not.toHaveBeenCalled()
+    conn.get()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toContain('derived-recreates-instance')
+  })
+})
+
 describe('owner', () => {
   test('dispose recursivo: filhos em ordem reversa, depois cleanups em ordem reversa; idempotente', () => {
     const log: string[] = []
@@ -537,11 +669,11 @@ describe('owner', () => {
   })
 
   test('handleError em modo de teste relança quando ninguém trata', () => {
-    setRethrowUnhandled(true)
+    __setTestMode(true)
     try {
       expect(() => handleError(createOwner('root', null), new Error('falha'), 'setup')).toThrow('falha')
     } finally {
-      setRethrowUnhandled(false)
+      __setTestMode(false)
     }
   })
 })

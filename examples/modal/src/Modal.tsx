@@ -1,5 +1,5 @@
 import { Portal, Boundary, Slot, useSlots, on, tick, onMount } from 'jotastic'
-import { api } from './api' // [ajuste] stub no lugar de `declare const api`
+import { api } from '../../lib/api' // [ajuste] A-11: a camada de API dos exemplos no lugar de `declare const api`
 
 // 1) Modal com Portal, foco, Escape, slots nomeados e two-way explícito (open + onOpenChange)
 export function Modal({
@@ -13,7 +13,7 @@ export function Modal({
   title: string
   children: JSX.Element
 }) {
-  const slots = useSlots<'actions'>(children) // <Slot name="actions"> vai para o rodapé; o resto é o corpo
+  const slots = useSlots<{ actions: JSX.Element }>(children) // [ajuste] T-5 (a spec ainda usa `<'actions'>`). <Slot name="actions"> vai para o rodapé; o resto é o corpo
   let dialog: HTMLDivElement | undefined
 
   on(document, 'keydown', (e) => open && e.key === 'Escape' && onOpenChange(false))
@@ -69,7 +69,7 @@ export function DeleteAccount() {
     <Boundary
       error={(err, retry) => (
         <p role="alert">
-          Erro: {(err as Error).message /* [ajuste] err: unknown */} <button onClick={retry}>Tentar de novo</button>
+          Erro: {err.message} <button onClick={retry}>Tentar de novo</button>
         </p>
       )}
     >

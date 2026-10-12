@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { createOwner, effect, flush, isReactive, runWithOwner, type DevtoolsEvent } from '../src/runtime/index'
+import { createOwner, effect, flush, isReactive, runWithOwner, tick, type DevtoolsEvent } from '../src/runtime/index'
 import { createStore } from '../src/store'
 
 type Hook = { emit: (e: DevtoolsEvent) => void; registry: { owners: Map<number, unknown> } }
@@ -38,17 +38,8 @@ interface Item {
 }
 
 describe('store (S1–S6)', () => {
-  test('S1 ação síncrona com 3 set → 1 flush', () => {
-    interface S {
-      a: number
-      b: number
-      c: number
-      bump(): void
-    }
-    const s = createStore<S>((set) => ({
-      a: 0,
-      b: 0,
-      c: 0,
+  test('S1 ação síncrona com 3 set → 1 flush (no microtask)', async () => {
+    const s = createStore({ a: 0, b: 0, c: 0 }, (set) => ({
       bump: () => {
         set({ a: 1 })
         set((d) => ({ b: d.a + 1 }))
@@ -61,6 +52,10 @@ describe('store (S1–S6)', () => {
     const c = counter(() => seen.push(`${s.a}${s.b}${s.c}`))
     events = []
     s.bump()
+    // sem flush síncrono (D61): o estado já mudou, os efeitos rodam no microtask
+    expect(s.c).toBe(3)
+    expect(flushes()).toBe(0)
+    await tick()
     expect(flushes()).toBe(1)
     expect(c.runs).toBe(2)
     expect(seen).toEqual(['000', '123'])
@@ -72,13 +67,9 @@ describe('store (S1–S6)', () => {
   })
 
   test('S2 set objeto / fn com retorno / fn mutadora: mesmo resultado; só assinantes das chaves mudadas rodam', () => {
-    interface S {
-      a: number
-      b: { x: number }
-      items: Item[]
-      run(): void
-    }
-    const variants: Array<(set: Parameters<Parameters<typeof createStore<S>>[0]>[0]) => void> = [
+    const make = (b: { x: number }) => ({ a: 1, b, items: [] as Item[] })
+    type Set = Parameters<NonNullable<Parameters<typeof createStore<ReturnType<typeof make>, {}>>[1]>>[0]
+    const variants: Array<(set: Set) => void> = [
       (set) => set({ a: 2, items: [{ id: 'x', qty: 1 }] }),
       (set) => set((d) => ({ a: d.a + 1, items: [...d.items, { id: 'x', qty: 1 }] })),
       (set) =>
@@ -88,12 +79,12 @@ describe('store (S1–S6)', () => {
         }),
     ]
     for (const update of variants) {
-      const b = { x: 1 }
-      const s = createStore<S>((set) => ({ a: 1, b, items: [], run: () => update(set) }), { name: 'v' })
+      const s = createStore(make({ x: 1 }), (set) => ({ run: () => update(set) }), { name: 'v' })
       const ca = counter(() => s.a)
       const cb = counter(() => s.b.x)
       const ci = counter(() => s.items.map((i) => i.qty))
       s.run()
+      flush()
       expect(s.$snapshot()).toEqual({ a: 2, b: { x: 1 }, items: [{ id: 'x', qty: 1 }] })
       expect(ca.runs).toBe(2)
       expect(cb.runs).toBe(1)
@@ -101,41 +92,31 @@ describe('store (S1–S6)', () => {
     }
 
     // folha com Object.is igual é no-op; objeto novo troca a referência (notifica mesmo com conteúdo igual)
-    const s = createStore<{ a: number; b: { x: number }; same(): void; swap(): void }>((set) => ({
-      a: 1,
-      b: { x: 1 },
+    const s = createStore({ a: 1, b: { x: 1 } }, (set) => ({
       same: () => set({ a: 1 }),
       swap: () => set({ b: { x: 1 } }),
     }))
     const ca = counter(() => s.a)
     const cb = counter(() => s.b)
     s.same()
+    flush()
     expect(ca.runs).toBe(1)
     s.swap()
+    flush()
     expect(cb.runs).toBe(2)
   })
 
   test('S3 getter é memo: recalcula só quando o que lê muda', () => {
     let computed = 0
-    interface S {
-      items: Item[]
-      other: number
-      readonly count: number
-      readonly double: number
-      add(id: string): void
-      touch(): void
-    }
-    const s = createStore<S>((set, get) => ({
-      items: [],
-      other: 0,
+    const s = createStore({ items: [] as Item[], other: 0 }, (set, get) => ({
       get count() {
         computed++
         return get().items.reduce((n, i) => n + i.qty, 0)
       },
-      get double() {
-        return get().count * 2
+      get double(): number {
+        return this.count * 2
       },
-      add: (id) =>
+      add: (id: string) =>
         set((d) => {
           d.items.push({ id, qty: 2 })
         }),
@@ -153,8 +134,10 @@ describe('store (S1–S6)', () => {
     expect(computed).toBe(2)
     const c = counter(() => s.double)
     s.touch()
+    flush()
     expect(c.runs).toBe(1)
     s.add('b')
+    flush()
     expect(c.runs).toBe(2)
     expect(s.double).toBe(8)
     // desestruturação lê o valor atual do memo
@@ -162,19 +145,10 @@ describe('store (S1–S6)', () => {
     expect(count).toBe(4)
   })
 
-  test('S4 ação async: trecho síncrono é um flush; cada set depois do await é seu próprio flush', async () => {
+  test('S4 ação async: set após await funciona sem ação; efeitos veem o valor final no microtask; 2 set = 1 flush', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
-    interface S {
-      a: number
-      b: number
-      c: number
-      load(): Promise<void>
-    }
-    const s = createStore<S>((set) => ({
-      a: 0,
-      b: 0,
-      c: 0,
+    const s = createStore({ a: 0, b: 0, c: 0 }, (set) => ({
       load: async () => {
         set({ a: 1 })
         set({ b: 1 })
@@ -183,31 +157,33 @@ describe('store (S1–S6)', () => {
         set({ c: 2 })
       },
     }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const seen: string[] = []
     counter(() => seen.push(`${s.a}${s.b}${s.c}`))
     events = []
     const p = s.load()
+    expect(flushes()).toBe(0)
+    await tick()
     expect(flushes()).toBe(1)
     expect(seen).toEqual(['000', '110'])
     release()
     await p
-    expect(flushes()).toBe(3)
-    expect(seen).toEqual(['000', '110', '120', '122'])
+    // os dois `set` depois do await entram no mesmo microtask: um flush, efeito vê só o valor final
+    expect(s.c).toBe(2)
+    await tick()
+    expect(flushes()).toBe(2)
+    expect(seen).toEqual(['000', '110', '122'])
+    expect(warn).not.toHaveBeenCalled()
+    // devtools: o trecho síncrono é uma entrada; cada `set` fora de ação, a sua
     const actions = events.filter((e) => e.type === 'store:action').map((e) => e.type === 'store:action' && e.changed)
     expect(actions).toEqual([['a', 'b'], ['b'], ['c']])
   })
 
   test('S5 mutação fora de ação avisa store-mutated-outside-action (dev)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    interface S {
-      n: number
-      items: Item[]
-      inc(): void
-    }
-    const s = createStore<S>(
+    const s = createStore(
+      { n: 0, items: [{ id: 'a', qty: 1 }] as Item[] },
       (set, get) => ({
-        n: 0,
-        items: [{ id: 'a', qty: 1 }],
         inc: () => {
           get().n++ // get() é mutável dentro da ação
           set((d) => {
@@ -236,32 +212,26 @@ describe('store (S1–S6)', () => {
     expect(s.items[0]!.qty).toBe(2)
   })
 
-  test('S6 $snapshot é cópia sem proxy; $reset volta ao inicial', () => {
-    let runs = 0
-    interface S {
-      items: Item[]
-      coupon: string | null
-      readonly count: number
-      add(id: string): void
-    }
-    const s = createStore<S>(
-      (set, get) => {
-        runs++
-        return {
-          items: [],
-          coupon: null,
-          get count() {
-            return get().items.length
-          },
-          add: (id) => set((d) => ({ items: [...d.items, { id, qty: 1 }], coupon: 'X' })),
-        }
-      },
+  test('S6 $snapshot é cópia do estado sem proxy; $reset volta ao primeiro argumento', () => {
+    const s = createStore(
+      { items: [] as Item[], coupon: null as string | null },
+      (set, get) => ({
+        get count() {
+          return get().items.length
+        },
+        add: (id: string) => set((d) => ({ items: [...d.items, { id, qty: 1 }], coupon: 'X' })),
+        push: (id: string) =>
+          set((d) => {
+            d.items.push({ id, qty: 1 })
+          }),
+      }),
       { name: 'cart' },
     )
     expect(s.$name).toBe('cart')
     s.add('a')
     const snap = s.$snapshot()
-    expect(snap).toEqual({ items: [{ id: 'a', qty: 1 }], coupon: 'X', count: 1 })
+    // só estado: sem getters nem ações (S-4)
+    expect(snap).toEqual({ items: [{ id: 'a', qty: 1 }], coupon: 'X' })
     expect(isReactive(snap)).toBe(false)
     expect(isReactive(snap.items)).toBe(false)
     expect(isReactive(snap.items[0])).toBe(false)
@@ -270,11 +240,33 @@ describe('store (S1–S6)', () => {
 
     const c = counter(() => s.count)
     s.$reset()
-    expect(runs).toBe(2)
-    expect(s.$snapshot()).toEqual({ items: [], coupon: null, count: 0 })
+    flush()
+    expect(s.$snapshot()).toEqual({ items: [], coupon: null })
     expect(c.runs).toBe(2)
-    // ações continuam funcionando depois do reset
-    s.add('b')
+    // mutação no draft não alcança o objeto inicial: o segundo reset também volta ao vazio
+    s.push('b')
     expect(s.count).toBe(1)
+    s.$reset()
+    expect(s.$snapshot()).toEqual({ items: [], coupon: null })
+
+    // estado como função: reavaliada a cada $reset
+    let runs = 0
+    const f = createStore(
+      () => {
+        runs++
+        return { n: runs }
+      },
+      (set) => ({ inc: () => set((d) => ({ n: d.n + 10 })) }),
+    )
+    expect(f.n).toBe(1)
+    f.inc()
+    expect(f.n).toBe(11)
+    f.$reset()
+    expect(runs).toBe(2)
+    expect(f.n).toBe(2)
+    // sem membros: só estado
+    const plain = createStore({ open: false })
+    expect(plain.open).toBe(false)
+    expect(plain.$snapshot()).toEqual({ open: false })
   })
 })

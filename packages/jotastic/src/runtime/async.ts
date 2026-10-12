@@ -173,9 +173,15 @@ export interface BoundaryProps {
 
 const NO_FAILURE = { error: undefined as unknown }
 
+/** `error(e, retry)` sempre recebe `Error`: não-Error lançado vira `Error(String(e))` com o original em `cause`. */
+function toError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e), { cause: e })
+}
+
 /**
  * Fronteira de pending + erro (D48). Os children são renderizados já, num owner filho, mas ficam fora do DOM enquanto
- * algum recurso rastreado está `loading` (mostra `pending()`). Erro capturado → dispose dos children e `error(e, retry)`;
+ * algum recurso rastreado está `loading` (mostra `pending()`). Erro capturado → dispose dos children e `error(e, retry)`
+ * (não-Error embrulhado em `Error`, original em `cause`);
  * `retry` recria do zero. Sem `error`, não captura. As views de pending/erro usam a fronteira de fora.
  */
 export function boundary(props: BoundaryProps): () => Rendered {
@@ -207,7 +213,7 @@ export function boundary(props: BoundaryProps): () => Rendered {
         dispose(c)
       }
       content.set(null)
-      failure.set({ error })
+      failure.set({ error: toError(error) })
       return true
     },
   }

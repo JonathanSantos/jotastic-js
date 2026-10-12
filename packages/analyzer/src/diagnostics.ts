@@ -1,6 +1,6 @@
 /** Catálogo e detecção dos diagnósticos estáticos de 12-diagnosticos.md (§Compilação / editor). */
 import * as t from '@babel/types'
-import type { NodePath } from '@babel/traverse'
+import type { Binding, NodePath } from '@babel/traverse'
 import type { AnalyzeOptions, Diagnostic, DiagnosticLevel, ReactiveBody } from './types'
 import type { FlowResult } from './flow'
 import type { BodyScope } from './scope'
@@ -10,6 +10,7 @@ import { isMutated } from './scope'
 import { isAssignable, isProbablyPrimitive, twoWayCandidates } from './jsx'
 import {
   attrName,
+  containsNode,
   findAttr,
   importedName,
   isIntrinsic,
@@ -34,6 +35,12 @@ export const DIAGNOSTIC_LEVELS = {
   'list-const-used-twice': 'error',
   'slot-name-not-literal': 'error',
   'component-ref-unsupported': 'error',
+  'use-spread-args-unsupported': 'error',
+  'use-param-assignment': 'error',
+  'await-position-unsupported': 'error',
+  'await-in-use-unsupported': 'error',
+  'pending-not-resource': 'error',
+  'slot-mixed-branch': 'hint',
   'continuation-state-resets': 'warning',
   'state-read-in-setup': 'warning',
   'watch-without-reads': 'warning',
@@ -102,6 +109,26 @@ function flowDiagnostics(data: BodyData, out: Diagnostic[]): void {
           p.node,
           '`await` dentro de `try` no corpo do componente não é suportado no MVP: o erro do recurso é roteado ao `<Boundary>` mais próximo.',
           'remova o `try` e envolva o componente em `<Boundary error={(e, retry) => …}>`.',
+        ),
+      )
+    else if (p.id === 'await-position-unsupported')
+      out.push(
+        diagnostic(
+          p.id,
+          p.node,
+          t.isForOfStatement(p.node)
+            ? '`for await` no corpo do componente não é suportado: só `await` no escopo raiz vira recurso.'
+            : 'Este `await` está numa posição que o compilador não transforma em recurso: só `const x = await …`, `await …;` e `const x = f(await …)` (um `await` por declaração, avaliado sempre) são suportados.',
+          'declare `const x = await …` numa linha própria e use `x` depois.',
+        ),
+      )
+    else if (p.id === 'await-in-use-unsupported')
+      out.push(
+        diagnostic(
+          p.id,
+          p.node,
+          `\`await\` no corpo de \`${data.body.name}\` não é suportado no MVP: funções \`use*\` não viram recurso.`,
+          'dispare a promise dentro de `watch(() => { f().then(v => (x = v)) })` e guarde o resultado num `let`.',
         ),
       )
     else
@@ -215,19 +242,43 @@ function continuationResets(data: BodyData, out: Diagnostic[]): void {
   }
 }
 
-const REACTIVE_API = new Set(['watch', 'on', 'onMount', 'onCleanup', 'external', 'inspect', 'untrack'])
+/** Leitura solta (`count;`, `a.b;`, `a + b;`): sem chamada, atribuição, `new`, `await` nem `delete` (fora de funções). */
+function isBareRead(e: t.Node): boolean {
+  return !containsNode(
+    e,
+    (n) =>
+      t.isCallExpression(n) ||
+      t.isOptionalCallExpression(n) ||
+      t.isNewExpression(n) ||
+      t.isTaggedTemplateExpression(n) ||
+      t.isAssignmentExpression(n) ||
+      t.isUpdateExpression(n) ||
+      t.isAwaitExpression(n) ||
+      t.isYieldExpression(n) ||
+      t.isUnaryExpression(n, { operator: 'delete' }) ||
+      t.isFunction(n) ||
+      t.isJSXElement(n) ||
+      t.isJSXFragment(n),
+  )
+}
 
+/** `console.*(…)` com o `console` global. */
+function isConsoleCall(s: NodePath, e: t.Node): boolean {
+  if (!t.isCallExpression(e)) return false
+  const callee = unwrap(e.callee)
+  return (
+    t.isMemberExpression(callee) && t.isIdentifier(callee.object, { name: 'console' }) && !s.scope.getBinding('console')
+  )
+}
+
+/** A-10: só leitura solta e `console.*(…)`; chamadas de método/função (`tabs.register(id)`) não avisam. */
 function stateReadInSetup(data: BodyData, options: AnalyzeOptions, out: Diagnostic[]): void {
   const body = data.scope.fn.get('body')
   if (!body.isBlockStatement()) return
   for (const s of body.get('body')) {
     if (!s.isExpressionStatement()) continue
     const e = unwrap(s.node.expression)
-    if (t.isAwaitExpression(e)) continue
-    if (t.isCallExpression(e) && t.isIdentifier(e.callee)) {
-      const api = importedName(s, e.callee.name)
-      if ((api && REACTIVE_API.has(api)) || isUseName(e.callee.name)) continue
-    }
+    if (!isBareRead(e) && !isConsoleCall(s, e)) continue
     const reads = data.cls.reactiveReadsIn(s.node.expression, { skipFunctions: true })
     if (reads.size === 0) continue
     const names = [...reads].map((n) => `\`${n}\``).join(', ')
@@ -279,6 +330,97 @@ function watchWithoutReads(data: BodyData, out: Diagnostic[]): void {
   })
 }
 
+type ItemShape = 'primitive' | 'noId' | 'unknown'
+
+function elementShape(e: t.Node): ItemShape {
+  const n = unwrap(e)
+  if (isProbablyPrimitive(n)) return 'primitive'
+  if (t.isObjectExpression(n)) {
+    const hasId = n.properties.some(
+      (p) =>
+        t.isSpreadElement(p) ||
+        ((t.isObjectProperty(p) || t.isObjectMethod(p)) &&
+          (t.isIdentifier(p.key, { name: 'id' }) || t.isStringLiteral(p.key, { value: 'id' }))),
+    )
+    return hasId ? 'unknown' : 'noId'
+  }
+  return 'unknown'
+}
+
+/** Tipo do elemento em `T[]` / `Array<T>` / `readonly T[]`. */
+function typeShape(type: t.Node | null | undefined): ItemShape | null {
+  if (!type) return null
+  let el: t.Node | null | undefined = null
+  if (t.isTSArrayType(type)) el = type.elementType
+  else if (t.isTSTypeOperator(type)) return typeShape(type.typeAnnotation)
+  else if (
+    t.isTSTypeReference(type) &&
+    t.isIdentifier(type.typeName) &&
+    (type.typeName.name === 'Array' || type.typeName.name === 'ReadonlyArray')
+  )
+    el = type.typeParameters?.params[0]
+  if (!el) return 'unknown'
+  const prim = (x: t.Node): boolean =>
+    t.isTSStringKeyword(x) ||
+    t.isTSNumberKeyword(x) ||
+    t.isTSBooleanKeyword(x) ||
+    t.isTSBigIntKeyword(x) ||
+    t.isTSLiteralType(x) ||
+    (t.isTSUnionType(x) && x.types.every(prim))
+  if (prim(el)) return 'primitive'
+  if (t.isTSTypeLiteral(el))
+    return el.members.some((m) => t.isTSPropertySignature(m) && t.isIdentifier(m.key, { name: 'id' }))
+      ? 'unknown'
+      : 'noId'
+  return 'unknown'
+}
+
+/**
+ * X-12: os itens de um `let` de array são primitivos ou literais de objeto sem `id`? Evidência: tipo anotado,
+ * elementos de literais de array no inicializador e nas atribuições, argumentos de `push`/`unshift`. Qualquer
+ * elemento de shape desconhecido (ou nenhuma evidência) → `false`.
+ */
+function itemsLackId(binding: Binding, declarator: t.VariableDeclarator): boolean {
+  const shapes: ItemShape[] = []
+  const id = declarator.id
+  const annotated =
+    t.isIdentifier(id) && t.isTSTypeAnnotation(id.typeAnnotation) ? id.typeAnnotation.typeAnnotation : null
+  const ts = typeShape(annotated)
+  if (ts) shapes.push(ts)
+  const fromArray = (e: t.Node | null | undefined) => {
+    if (!e) return
+    const n = unwrap(e)
+    if (t.isArrayExpression(n)) {
+      for (const el of n.elements) {
+        if (!el) continue
+        if (t.isSpreadElement(el)) {
+          const arg = unwrap(el.argument)
+          if (t.isIdentifier(arg) && arg.name === binding.identifier.name) continue
+          shapes.push('unknown')
+        } else shapes.push(elementShape(el))
+      }
+    } else if (t.isCallExpression(n) && t.isMemberExpression(n.callee)) {
+      // `xs.filter(…)`/`xs.slice(…)` da própria fonte preservam o shape
+      const root = memberRoot(n.callee)
+      if (!(t.isIdentifier(root) && root.name === binding.identifier.name)) shapes.push('unknown')
+    } else if (!(t.isIdentifier(n) && n.name === 'undefined')) shapes.push('unknown')
+  }
+  if (declarator.init) fromArray(declarator.init)
+  for (const v of binding.constantViolations) {
+    if (v.isAssignmentExpression() && v.node.operator === '=') fromArray(v.node.right)
+    else if (!v.isVariableDeclarator()) shapes.push('unknown')
+  }
+  for (const r of binding.referencePaths) {
+    const m = r.parentPath
+    if (!m?.isMemberExpression() || m.node.object !== r.node || !t.isIdentifier(m.node.property)) continue
+    if (!['push', 'unshift'].includes(m.node.property.name)) continue
+    const call = m.parentPath
+    if (!call?.isCallExpression() || call.node.callee !== m.node) continue
+    for (const a of call.node.arguments) shapes.push(t.isSpreadElement(a) ? 'unknown' : elementShape(a))
+  }
+  return shapes.length > 0 && shapes.every((x) => x !== 'unknown')
+}
+
 function preferKey(data: BodyData, out: Diagnostic[]): void {
   data.scope.fn.traverse({
     CallExpression(call) {
@@ -311,22 +453,13 @@ function preferKey(data: BodyData, out: Diagnostic[]): void {
       const rootId = memberRoot(srcExpr)
       if (!t.isIdentifier(rootId)) return
       const binding = call.scope.getBinding(rootId.name)
-      let replaceable = false
-      let why = ''
+      // X-12: só `let` reatribuído cujo item é primitivo ou literal de objeto sem `id`; await/store (shape
+      // desconhecido) não avisam.
+      const decl = data.scope.declByName.get(rootId.name)
       const info = data.body.bindings.get(rootId.name)
-      if (info && data.scope.declByName.get(rootId.name)?.binding === binding) {
-        if (info.kind === 'resource') {
-          replaceable = true
-          why = 'vem de um `await`'
-        } else if (info.isLet && info.reassigned) {
-          replaceable = true
-          why = 'é um `let` reatribuído'
-        }
-      } else if (binding?.kind === 'module' && srcExpr !== rootId) {
-        replaceable = true
-        why = 'vem de um store'
-      }
-      if (!replaceable) return
+      if (!info || !decl || decl.binding !== binding || !info.isLet || !info.reassigned) return
+      if (!itemsLackId(decl.binding, decl.declarator.node)) return
+      const why = 'é um `let` reatribuído'
       // item com id evidente?
       const item = cb.params[0]
       if (t.isIdentifier(item)) {
@@ -486,6 +619,64 @@ function letNeverReassigned(data: BodyData, out: Diagnostic[]): void {
   }
 }
 
+function useParamAssignment(data: BodyData, out: Diagnostic[]): void {
+  for (const [b, name] of data.scope.paramBindings) {
+    for (const v of b.constantViolations) {
+      out.push(
+        diagnostic(
+          'use-param-assignment',
+          v.node,
+          `\`${name}\` é parâmetro de \`${data.body.name}\`: parâmetros de \`use*\` chegam como getters do chamador e não podem ser reatribuídos.`,
+          `copie para um \`let\` local (\`let ${name}Local = ${name}\`) e escreva nele.`,
+        ),
+      )
+    }
+  }
+}
+
+// ── arquivo inteiro (chamadas) ────────────────────────────────────────────────
+
+function callDiagnostics(program: NodePath<t.Program>, data: BodyData[], out: Diagnostic[]): void {
+  const resources = new Set<Binding>()
+  for (const d of data)
+    for (const decl of d.scope.decls)
+      if (d.body.bindings.get(decl.name)?.kind === 'resource') resources.add(decl.binding)
+  const inBody = (n: t.Node) => data.some((d) => within(n, d.body.node))
+  program.traverse({
+    CallExpression(call) {
+      const callee = call.node.callee
+      if (!t.isIdentifier(callee)) return
+      if (isUseName(callee.name) && inBody(call.node)) {
+        const spread = call.node.arguments.find((a) => t.isSpreadElement(a))
+        if (spread)
+          out.push(
+            diagnostic(
+              'use-spread-args-unsupported',
+              spread,
+              `Spread nos argumentos de \`${callee.name}\` não é suportado: cada argumento de \`use*\` vira um getter separado em build.`,
+              'passe os argumentos um a um, ou passe o array como um único argumento.',
+            ),
+          )
+      }
+      const api = jotasticCallee(call)
+      if (api !== 'pending' && api !== 'refresh') return
+      const arg = call.node.arguments[0]
+      if (arg && t.isIdentifier(arg)) {
+        const b = call.scope.getBinding(arg.name)
+        if (b && resources.has(b)) return
+      }
+      out.push(
+        diagnostic(
+          'pending-not-resource',
+          call.node,
+          `\`${api}(…)\` só funciona com uma variável que vem de \`await\` no corpo do componente (\`const x = await …\`).`,
+          `passe o nome declarado com \`await\`, ex.: \`const user = await api.user(id)\` → \`${api}(user)\`.`,
+        ),
+      )
+    },
+  })
+}
+
 // ── arquivo inteiro (JSX) ─────────────────────────────────────────────────────
 
 function isSlotElement(p: NodePath<t.JSXElement>): boolean {
@@ -530,6 +721,7 @@ function jsxDiagnostics(program: NodePath<t.Program>, options: AnalyzeOptions, d
       // sobe por fragmentos, `{…}`, `&&` e ternários até o elemento pai
       let child: NodePath = el
       let p: NodePath | null = el.parentPath
+      const mixed: t.ConditionalExpression[] = []
       while (
         p &&
         (p.isJSXFragment() ||
@@ -539,6 +731,17 @@ function jsxDiagnostics(program: NodePath<t.Program>, options: AnalyzeOptions, d
           (p.isConditionalExpression() && child.key !== 'test'))
       ) {
         if (p.isJSXExpressionContainer() && p.parentPath?.isJSXAttribute()) break
+        if (p.isConditionalExpression()) {
+          const other = unwrap(child.key === 'consequent' ? p.node.alternate : p.node.consequent)
+          const nullish =
+            t.isNullLiteral(other) ||
+            t.isBooleanLiteral(other, { value: false }) ||
+            t.isIdentifier(other, { name: 'undefined' })
+          const otherIsSlot =
+            t.isJSXElement(other) &&
+            isSlotElement(p.get(child.key === 'consequent' ? 'alternate' : 'consequent') as NodePath<t.JSXElement>)
+          if (!nullish && !otherIsSlot) mixed.push(p.node)
+        }
         child = p
         p = p.parentPath
       }
@@ -548,6 +751,16 @@ function jsxDiagnostics(program: NodePath<t.Program>, options: AnalyzeOptions, d
         child.listKey === 'children' &&
         !isIntrinsic(p.node.openingElement.name) &&
         !isSlotElement(p as NodePath<t.JSXElement>)
+      if (ok)
+        for (const c of mixed)
+          out.push(
+            diagnostic(
+              'slot-mixed-branch',
+              c,
+              'Ternário entre um `<Slot>` e conteúdo comum: o slot e o `default` viram getters complementares (um é `null` quando o outro está ativo).',
+              'se a intenção é trocar só o conteúdo do slot, coloque o ternário dentro do `<Slot>`.',
+            ),
+          )
       if (!ok)
         out.push(
           diagnostic(
@@ -670,13 +883,16 @@ export function collectDiagnostics(
 ): Diagnostic[] {
   const out: Diagnostic[] = []
   for (const d of data) {
+    flowDiagnostics(d, out)
     if (d.body.kind === 'component') {
-      flowDiagnostics(d, out)
       continuationResets(d, out)
       stateReadInSetup(d, options, out)
       refNonOptionalInBranch(d, out)
       awaitWaterfall(d, out)
-    } else useReturn(d, out)
+    } else {
+      useReturn(d, out)
+      useParamAssignment(d, out)
+    }
     refBeforeMount(d, out)
     listConstUsedTwice(d, out)
     watchWithoutReads(d, out)
@@ -685,6 +901,7 @@ export function collectDiagnostics(
     letNeverReassigned(d, out)
   }
   jsxDiagnostics(program, options, data, out)
+  callDiagnostics(program, data, out)
   out.sort((a, b) => a.loc.line - b.loc.line || a.loc.column - b.loc.column || a.id.localeCompare(b.id))
   return out
 }

@@ -9,6 +9,7 @@ export {
   tick,
   isTracking,
   abortSignal,
+  _void,
   type Signal,
   type Memo,
   type MemoOptions,
@@ -21,6 +22,7 @@ export {
   onCleanup,
   dispose,
   handleError,
+  __setTestMode,
   type Cleanup,
   type Dispose,
   type DevMeta,
@@ -52,5 +54,4 @@ export { component, keyed, branches, list, children, slots, SLOTS, portal, type 
 export { reactive, raw, isReactive, toReactive, readonly } from './proxy'
 export { shallowEqual } from './shallow'
 export { resource, continuation, boundary, type Resource, type BoundaryProps } from './async'
-// Interno (dev): HMR. Chamado só pelo rodapé que o compilador emite com `hmr` ligado.
-export { __hmrComponents, __hmrResetRegistry, type HmrOptions } from './hmr'
+// HMR (`__hmrComponents`…) fica no subpath interno `jotastic/runtime/hmr` (D65), entrada própria no tsup.

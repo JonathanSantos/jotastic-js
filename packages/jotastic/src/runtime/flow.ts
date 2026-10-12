@@ -11,8 +11,8 @@ import { DEV } from './env'
 import { createOwner, dispose, getOwner, handleError, onCleanup, runWithOwner, type DevMeta, type Owner } from './owner'
 import { effect, memo, signal, untrack, type Signal } from './reactive'
 
-/** Resultado de um componente / de uma expressão de JSX. Funções são accessors (lazy). */
-export type Rendered = Node | Node[] | string | number | boolean | null | undefined | (() => Rendered)
+/** Resultado de um componente / de uma expressão de JSX (arrays recursivos, L-7). Funções são accessors (lazy). */
+export type Rendered = Node | Rendered[] | string | number | boolean | null | undefined | (() => Rendered)
 
 /** Roda `fn` sem rastrear dentro de `owner`. Erro → `handleError(owner, e, 'setup')` e null. */
 function renderIn(owner: Owner, fn: () => Rendered): Rendered {

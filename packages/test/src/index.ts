@@ -1,6 +1,13 @@
 // @jotastic/test: render + tick + contador de execuções (ver docs/spec/13-tooling.md §Testes e 19-plano-de-testes.md).
 
-import { createRoot, type DevMeta, type DevtoolsEvent, type DevtoolsHook, type ErrorInfo } from 'jotastic/runtime'
+import {
+  __setTestMode,
+  createRoot,
+  type DevMeta,
+  type DevtoolsEvent,
+  type DevtoolsHook,
+  type ErrorInfo,
+} from 'jotastic/runtime'
 
 export { tick } from 'jotastic/runtime'
 
@@ -47,12 +54,6 @@ function onEvent(event: DevtoolsEvent): void {
     case 'dom:write':
       counters.writes++
       break
-    case 'error':
-      // Root sem `onError` e nenhuma fronteira tratou: relança para o teste falhar (17-contratos.md §Erros).
-      // `handleError` emite este evento antes de cair no `console.error`, então lançar aqui equivale a
-      // `setRethrowUnhandled(true)`, que não é exportado por `jotastic/runtime`.
-      if (event.handledBy === 'console') throw event.error
-      break
   }
 }
 
@@ -76,6 +77,8 @@ function ensureHook(): void {
 }
 
 ensureHook()
+// Root sem `onError` e nenhuma fronteira tratou: o runtime relança para o teste falhar (Q-1, 17-contratos.md §Erros).
+__setTestMode(true)
 
 /** `{ effects, memos, writes }` desde o último `resetCounts()`. */
 export function counts(): Counts {

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "use-spread-args-unsupported",
+    "level": "error",
+    "loc": {
+      "line": 4,
+      "column": 28,
+      "endLine": 4,
+      "endColumn": 36
+    }
+  }
+]

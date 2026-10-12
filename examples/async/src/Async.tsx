@@ -1,5 +1,5 @@
 import { pending, refresh, Boundary } from 'jotastic'
-import { api } from './api' // [ajuste] A-11: stub com latência simulada no lugar de `./lib/api` + `declare const api`
+import { api } from '../../lib/api' // a camada de API já anexa o abortSignal() ambiente (ver examples/lib/api.ts)
 import { useDebounced } from './useDebounced' // [ajuste] era `declare function useDebounced` (07-use-functions)
 import { ErrorBox, ErrorPage, PageSpinner, Skeleton } from './ui' // [ajuste] eram `declare const`
 
@@ -16,9 +16,8 @@ export async function UserCard({ id }: { id: string }) {
 
 // Loading e erro ficam no <Boundary>, explícitos, como <Suspense> + ErrorBoundary em uma peça
 export function Sidebar({ userId }: { userId: string }) {
-  // [ajuste] `e as Error`: o erro do Boundary é `unknown`
   return (
-    <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e as Error} onRetry={retry} />}>
+    <Boundary pending={<Skeleton />} error={(e, retry) => <ErrorBox error={e} onRetry={retry} />}>
       <UserCard id={userId} />
     </Boundary>
   )
@@ -26,9 +25,8 @@ export function Sidebar({ userId }: { userId: string }) {
 
 // Um boundary espera vários filhos no primeiro carregamento
 export function Dashboard({ userId }: { userId: string }) {
-  // [ajuste] `e as Error`: o erro do Boundary é `unknown`
   return (
-    <Boundary pending={<PageSpinner />} error={(e, retry) => <ErrorPage error={e as Error} onRetry={retry} />}>
+    <Boundary pending={<PageSpinner />} error={(e, retry) => <ErrorPage error={e} onRetry={retry} />}>
       <UserCard id={userId} />
       <UserPosts id={userId} />
     </Boundary>
@@ -37,9 +35,9 @@ export function Dashboard({ userId }: { userId: string }) {
 
 // 2) Awaits dependentes e paralelos
 export async function UserPosts({ id }: { id: string }) {
+  let onlyPublished = false // antes do await: sobrevive a recargas
   const user = await api.user(id)
   const [posts, tags] = await Promise.all([api.posts(user.id), api.tags()]) // paralelo explícito
-  let onlyPublished = false // estado da continuação
 
   const visible = onlyPublished ? posts.filter((p) => p.published) : posts
 

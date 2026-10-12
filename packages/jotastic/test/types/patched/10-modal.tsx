@@ -8,7 +8,7 @@ export function Modal({ open, onOpenChange, title, children }: {
   title: string
   children: JSX.Element
 }) {
-  const slots = useSlots<'actions'>(children)       // <Slot name="actions"> vai para o rodapé; o resto é o corpo
+  const slots = useSlots<{ actions: JSX.Element }>(children) // [patch] T-5: mapa de tipos, não união de nomes. <Slot name="actions"> vai para o rodapé; o resto é o corpo
   let dialog: HTMLDivElement | undefined
 
   on(document, 'keydown', e => open && e.key === 'Escape' && onOpenChange(false))
@@ -53,7 +53,7 @@ export function DeleteAccount() {
   }
 
   return (
-    <Boundary error={(err, retry) => <p role="alert">Erro: {(err as Error).message /* [patch] err: unknown */} <button onClick={retry}>Tentar de novo</button></p>}>
+    <Boundary error={(err, retry) => <p role="alert">Erro: {err.message} <button onClick={retry}>Tentar de novo</button></p>}>
       <button class="danger" onClick={openConfirm}>Excluir conta</button>
 
       <Modal open={confirmOpen} onOpenChange={v => (confirmOpen = v)} title="Tem certeza?">

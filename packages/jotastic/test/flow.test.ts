@@ -497,7 +497,7 @@ describe('fluxo (F1–F16)', () => {
       () =>
         component(
           function App() {
-            provide(ctx, 'tema')
+            provide(ctx, () => 'tema')
             const p = document.createElement('p')
             p.textContent = 'app'
             const r = portal(
@@ -568,9 +568,7 @@ describe('fluxo (F1–F16)', () => {
       component(function Parent() {
         onCleanup(() => log.push('parent:1'))
         onCleanup(() => log.push('parent:2'))
-        // `Rendered` não aceita array misto (mesma lacuna de T-1): cast no teste
-        const out = [component(Child, { n: 'a' }), branches([[() => show.get(), () => component(Child, { n: 'b' })]])]
-        return out as unknown as Rendered
+        return [component(Child, { n: 'a' }), branches([[() => show.get(), () => component(Child, { n: 'b' })]])]
       }, {}),
     )
     expect(div.textContent).toBe('ab')

@@ -1,9 +1,14 @@
 /** Early return / `await` no escopo raiz → `FlowNode[]` (18 §9 e §10). */
 import * as t from '@babel/types'
 import type { FlowNode } from './types'
-import { findAwaits, walk } from './util'
+import { findAwaits, unwrap, walk } from './util'
 
-export type FlowProblemId = 'return-in-loop-or-try' | 'await-in-try' | 'await-in-branch'
+export type FlowProblemId =
+  | 'return-in-loop-or-try'
+  | 'await-in-try'
+  | 'await-in-branch'
+  | 'await-position-unsupported'
+  | 'await-in-use-unsupported'
 
 export interface FlowProblem {
   id: FlowProblemId
@@ -56,6 +61,48 @@ function returnsInside(node: t.Node): t.ReturnStatement[] {
   return out
 }
 
+/** `target` só é avaliado sob condição dentro de `root` (ramo de `?:`, lado direito de `&&`/`||`/`??`, após `?.`). */
+function conditionallyEvaluated(root: t.Node, target: t.Node): boolean {
+  let found = false
+  const visit = (n: t.Node, cond: boolean): void => {
+    if (found) return
+    if (n === target) {
+      found = cond
+      return
+    }
+    if (t.isFunction(n)) return
+    for (const key of t.VISITOR_KEYS[n.type] ?? []) {
+      const child = (n as unknown as Record<string, unknown>)[key]
+      const c =
+        cond ||
+        (t.isConditionalExpression(n) && key !== 'test') ||
+        (t.isLogicalExpression(n) && key === 'right') ||
+        ((t.isOptionalCallExpression(n) || t.isOptionalMemberExpression(n)) && key !== 'object' && key !== 'callee')
+      if (Array.isArray(child)) {
+        for (const x of child) if (x && typeof x === 'object' && 'type' in x) visit(x as t.Node, c)
+      } else if (child && typeof child === 'object' && 'type' in child) visit(child as t.Node, c)
+    }
+  }
+  visit(root, false)
+  return found
+}
+
+/**
+ * W-5 (18 §10): `await` suportado em declaração. Um único declarador com um único `await`, que é o inicializador
+ * inteiro (`const x = await e`, `let x = await e`, `const [a, b] = await e`) ou está aninhado em
+ * `const x = f(await e)` / `(await e).y` (hoisting; só `const` com identificador, avaliado incondicionalmente).
+ */
+function supportedDeclAwait(
+  s: t.VariableDeclaration,
+  d: t.VariableDeclarator,
+  awaits: t.AwaitExpression[],
+): 'direct' | 'hoisted' | null {
+  if (s.declarations.length !== 1 || awaits.length !== 1 || !d.init) return null
+  if (unwrap(d.init) === awaits[0]) return 'direct'
+  if (s.kind !== 'const' || !t.isIdentifier(d.id) || conditionallyEvaluated(d.init, awaits[0]!)) return null
+  return 'hoisted'
+}
+
 function withLoc<T extends t.Node>(node: T, from: t.Node): T {
   node.loc = from.loc
   node.start = from.start
@@ -80,7 +127,18 @@ export function computeFlow(fn: t.Function, kind: 'component' | 'use'): FlowResu
   let current = -1
   let ended = false
 
+  const forAwaits = (node: t.Node): t.Node[] => {
+    const out: t.Node[] = []
+    walk(node, (n) => {
+      if (t.isForOfStatement(n) && n.await) out.push(n)
+    })
+    return out
+  }
+
   if (kind === 'use') {
+    // 18 §10 / W-5: `await` no corpo raiz de `use*` não é suportado no MVP
+    for (const a of [...findAwaits(fn.body), ...forAwaits(fn.body)])
+      res.problems.push({ id: 'await-in-use-unsupported', node: a, where: 'use*' })
     for (const s of stmts) {
       res.stmtIndex.set(s, current)
       if (t.isReturnStatement(s)) {
@@ -195,19 +253,40 @@ export function computeFlow(fn: t.Function, kind: 'component' | 'use'): FlowResu
     if (t.isVariableDeclaration(s)) {
       for (const d of s.declarations) {
         if (!d.init) continue
-        for (const a of findAwaits(d.init)) res.flow.push({ kind: 'await', node: a, declarator: d, reads: new Set() })
+        const awaits = findAwaits(d.init)
+        if (awaits.length === 0) continue
+        const form = supportedDeclAwait(s, d, awaits)
+        if (form)
+          res.flow.push({
+            kind: 'await',
+            node: awaits[0]!,
+            declarator: d,
+            reads: new Set(),
+            hoisted: form === 'hoisted',
+          })
+        else
+          for (const a of awaits) res.problems.push({ id: 'await-position-unsupported', node: a, where: 'declaração' })
       }
       current = res.flow.length - 1
       continue
     }
 
     if (t.isExpressionStatement(s)) {
-      for (const a of findAwaits(s.expression)) res.flow.push({ kind: 'await', node: a, reads: new Set() })
+      const awaits = findAwaits(s.expression)
+      if (awaits.length === 1 && unwrap(s.expression) === awaits[0])
+        res.flow.push({ kind: 'await', node: awaits[0], reads: new Set(), hoisted: false })
+      else for (const a of awaits) res.problems.push({ id: 'await-position-unsupported', node: a, where: 'expressão' })
       current = res.flow.length - 1
       continue
     }
 
     if (t.isBlockStatement(s) || t.isLabeledStatement(s)) flagAwaits(s, 'await-in-branch', 'bloco')
   }
+
+  // `await` (e `for await`) em qualquer outra posição do escopo raiz (`return`, condição de `if`, laço…)
+  const covered = new Set<t.Node>(res.problems.map((p) => p.node))
+  for (const f of res.flow) if (f.kind === 'await') covered.add(f.node)
+  for (const a of [...findAwaits(fn.body), ...forAwaits(fn.body)])
+    if (!covered.has(a)) res.problems.push({ id: 'await-position-unsupported', node: a, where: 'posição' })
   return res
 }

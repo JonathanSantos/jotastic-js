@@ -1,4 +1,4 @@
-import { Slot, useSlots, type SlotFn } from 'jotastic' // [ajuste] SlotFn (T-5)
+import { Slot, useSlots } from 'jotastic'
 
 interface Item {
   id: string
@@ -8,7 +8,12 @@ interface Item {
 
 // Slots nomeados, slot padrão, slot com parâmetro e slot condicional. Tudo resolvido em build.
 export function DataTable({ items, children }: { items: Item[]; children: JSX.Element }) {
-  const slots = useSlots<'toolbar' | 'row' | 'empty' | 'footer'>(children)
+  const slots = useSlots<{
+    toolbar: JSX.Element
+    row: (item: Item) => JSX.Element
+    empty: JSX.Element
+    footer: JSX.Element
+  }>(children)
   let sortBy: keyof Item = 'name'
 
   const sorted = [...items].sort((a, b) => (a[sortBy] > b[sortBy] ? 1 : -1))
@@ -28,8 +33,7 @@ export function DataTable({ items, children }: { items: Item[]; children: JSX.El
       <ul>
         {sorted.map((item) => (
           <li>
-            {slots.row ? (slots.row as SlotFn)(item) : item.name /* [ajuste] T-5: Element | SlotFn não é chamável */}{' '}
-            {/* slot com parâmetro */}
+            {slots.row ? slots.row(item) : item.name} {/* slot com parâmetro */}
           </li>
         ))}
       </ul>

@@ -29,6 +29,13 @@ const VALID: Partial<Record<DiagnosticId, string[]>> = {
     "import { watch } from 'jotastic'\nexport function C({ n }: { n: number }) { watch(() => console.log(n))\nreturn <p>{n}</p> }",
   ],
   'value-not-writable': ["export function C() { let v = ''\nreturn <input value={v} /> }"],
+  'pending-not-resource': [
+    "import { pending } from 'jotastic'\nexport async function C({ id }: { id: string }) { const u = await load(id)\nreturn <p class={{ x: pending(u) }}>{u}</p> }\ndeclare function load(id: string): Promise<string>",
+  ],
+  'await-position-unsupported': [
+    'export async function C({ id }: { id: string }) { const n = (await load(id)).length\nreturn <p>{n}</p> }\ndeclare function load(id: string): Promise<string>',
+  ],
+  'use-param-assignment': ['export function useA(o: { a: number }) { const f = () => { o.a = 1 }\nreturn { f } }'],
 }
 
 const applyFixes = (code: string, ds: Diagnostic[]) =>
