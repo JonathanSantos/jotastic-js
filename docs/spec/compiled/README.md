@@ -11,6 +11,8 @@ Cada arquivo é o JS que o compilador DEVE emitir (modo **dev**, legível) para 
 | [05-async-user-card.js](05-async-user-card.js) | examples/06-async.tsx (`UserCard`, `Sidebar`) | resource, continuation, `pending`/`refresh`, Boundary |
 | [06-slots-card.js](06-slots-card.js) | spec 02 (`Card` com slots) | objeto de slots, slot com parâmetro, slot condicional |
 
+Atualizados com D58 (item lazy), D59 (`_void`), D60 (`state`), D64 (`text`). Ver [22](../22-decisoes-pos-implementacao.md).
+
 Convenções de emissão (dev):
 - Imports nomeados de `jotastic/runtime`, um por helper usado.
 - Templates hoisted no topo do módulo como `_t0`, `_t1`…; nós resolvidos uma vez por instância como `_a`, `_b`… via `firstChild`/`nextSibling`.

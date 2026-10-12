@@ -18,10 +18,16 @@ Regra para entrar aqui: o gatilho é **sintático** (sem tipos) ou de **runtime 
 | `list-const-used-twice` | E | `const rows = items.map(JSX)` inserido em mais de um lugar | sugere um componente |
 | `slot-name-not-literal` | E | `<Slot name={expr}>` | exige string literal |
 | `component-ref-unsupported` | E | `ref` em componente (fase 2) | sugere prop de callback |
+| `use-spread-args-unsupported` | E | `useX(...xs)` | — |
+| `use-param-assignment` | E | escrita em parâmetro de `use*` | sugere `let` local |
+| `await-position-unsupported` | E | `await` em posição não coberta por 18 §10 | sugere `const x = await …` |
+| `await-in-use-unsupported` | E | `await` no corpo raiz de `use*` (MVP) | sugere `watch` + promise |
+| `pending-not-resource` | E | `pending(x)`/`refresh(x)` com `x` que não vem de `await` | — |
+| `slot-mixed-branch` | H | `{c ? <Slot/> : <i/>}` | explica os getters complementares |
 | `continuation-state-resets` | W | `let` declarado depois de um early return / `await` | explica; sugere mover para cima |
-| `state-read-in-setup` | W | instrução solta no corpo raiz que lê estado/prop (`console.log(count)`) | autofix: envolver em `watch` |
+| `state-read-in-setup` | W | leitura solta no corpo raiz (`count;`) ou `console.*(…)` lendo estado/prop; chamadas de método (`tabs.register(id)`) não avisam | autofix: envolver em `watch` |
 | `watch-without-reads` | W | `watch` cujo corpo não lê nada reativo | sugere `onMount` |
-| `prefer-key-in-list` | W | `.map` com JSX sem `key`, fonte reatribuível (`let` reatribuído, store, `await`) e item sem `id` evidente | sugere `key={item.id}` |
+| `prefer-key-in-list` | W | `.map` com JSX sem `key`, fonte reatribuível e item **primitivo ou literal de objeto sem `id`**; shape desconhecido (await/store) não avisa | sugere `key={item.id}` |
 | `class-name-alias` | W | `className` / `htmlFor` | autofix → `class` / `for` |
 | `ref-non-optional-in-branch` | W | `ref` em elemento condicional com variável tipada `!:` | sugere `\| undefined` |
 | `on-change-on-input` | H | `onChange` + `value=` em `input`/`textarea` | sugere `onInput` |
@@ -37,10 +43,14 @@ Exclusões de `state-read-in-setup`: inicializadores de `let`/`const`, early ret
 | ID | Nível | Gatilho | Mensagem aponta |
 |---|---|---|---|
 | `derived-mutated` | W | escrita no resultado de um derivado | a linha do `const` |
-| `derived-recreates-instance` | W | derivado recalcula e devolve instância de classe | sugere `external` com `update` |
+| `derived-recreates-instance` | W | derivado recalcula e devolve instância com método de ciclo de vida (`destroy`/`dispose`/`disconnect`/`close`/`unsubscribe`/`abort`) | sugere `external` com `update` |
 | `store-mutated-outside-action` | W | escrita direta em store fora de uma ação | a linha da escrita e o nome do store |
 | `effect-loop` | E | effect executa 100 vezes seguidas | variável escrita e linha do `watch` |
 | `use-outside-owner` | E | `use*`/`watch`/`on`/`onMount` chamados fora de um corpo reativo | a chamada |
+| `not-compiled` | E | marcador executado sem compilador (`Slot`, `external`, `pending` em valor comum) | a chamada |
+| `mount-target-missing` | E | `mount(el, '#x')` sem elemento | o seletor |
+| `context-missing` | E | `useContext` sem Provider nem default | a chamada |
+| `list-duplicate-key` | W | duas linhas com a mesma chave | a lista |
 
 ## Devtools
 

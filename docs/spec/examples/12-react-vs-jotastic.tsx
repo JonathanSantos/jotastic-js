@@ -85,4 +85,3 @@ export async function UserSearch({ initialQuery }: { initialQuery: string }) {
 interface User { id: string; name: string }
 declare const UserDetailReact: (p: { user: User }) => JSX.Element
 declare const UserDetail: (p: { user: User }) => JSX.Element
-declare const api: { users(q: string): Promise<User[]> }

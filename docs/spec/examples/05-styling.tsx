@@ -3,13 +3,14 @@ import { watch } from 'jotastic'
 import './button.css'
 
 // Tema global em store (lido por qualquer componente, sem Provider)
-export const theme = createStore((set, get) => ({
-  mode: 'light' as 'light' | 'dark',
-  accent: '#6750a4',
-  get isDark() { return get().mode === 'dark' },
-  toggle: () => set(s => ({ mode: s.mode === 'light' ? 'dark' : 'light' })),
-  setAccent: (accent: string) => set({ accent }),
-}))
+export const theme = createStore(
+  { mode: 'light' as 'light' | 'dark', accent: '#6750a4' },
+  (set, get) => ({
+    get isDark() { return get().mode === 'dark' },
+    toggle: () => set(s => ({ mode: s.mode === 'light' ? 'dark' : 'light' })),
+    setAccent: (accent: string) => set({ accent }),
+  }),
+)
 
 // 1) class como objeto / array / string
 export function Button({ variant = 'primary', size = 'md', loading = false, children, ...rest }: ButtonProps) {
@@ -75,7 +76,7 @@ export function ThemeToggle() {
   )
 }
 
-interface ButtonProps extends JSX.IntrinsicElements['button'] {
+type ButtonProps = JSX.IntrinsicElements['button'] & {
   variant?: 'primary' | 'secondary' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean

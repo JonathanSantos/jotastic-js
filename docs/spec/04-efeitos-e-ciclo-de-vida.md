@@ -32,6 +32,7 @@ watch(() => {
 - Roda **depois** do componente ser montado no DOM (refs já existem) e depois de cada flush em que uma dependência mudou.
 - Pode escrever em estado. Um efeito que escreve no que lê é interrompido após 100 execuções (`effect-loop`).
 - É descartado com o owner (componente, branch ou item de lista).
+- **O efeito é um escopo**: `onCleanup`, `on`, `external` e efeitos criados dentro dele pertencem àquela execução e são descartados antes da próxima e no unmount. É o que torna seguro `watch(() => { if (open) on(document, 'keydown', …) })`.
 - Um `watch` que não lê nada reativo recebe o aviso `watch-without-reads` (provavelmente devia ser `onMount`).
 - Dentro do efeito, `abortSignal()` (e o `fetch` de `jotastic/fetch`) devolve um signal **abortado no cleanup**: requisições disparadas pelo efeito são canceladas quando ele roda de novo ou é descartado, sem `AbortController` manual.
 - Uma instrução solta no corpo raiz que lê estado (`console.log(count)`) recebe `state-read-in-setup` com autofix "envolver em `watch`".

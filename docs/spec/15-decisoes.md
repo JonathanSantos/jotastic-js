@@ -72,6 +72,22 @@ Todas as decisões vigentes, com o porquê em uma linha. Os números preservam o
 | D56 | `useForm` é receita oficial nos exemplos; `@jotastic/form` na fase 2 | Formulários sem API no núcleo |
 | D57 | `useContext(Ctx)` em vez de `Ctx.use()` | `use*` na lib significa função compilada |
 
+## Pós-implementação ([22](22-decisoes-pos-implementacao.md))
+
+| ID | Decisão | Por quê |
+|---|---|---|
+| **D58** | Item de lista é lazy (`item()`); chave igual com referência nova atualiza o signal da linha | Nós preservados e dados vivos sem reconcile |
+| **D59** | Defaults de parâmetros de `use*` em thunk no callee (`= _void`) | Aridade entre módulos |
+| **D60** | `signal` só com inicializador e atribuições provavelmente primitivos; senão `state` | A regra vence os snapshots |
+| **D61** | Store sem flush síncrono | Uma regra: DOM no microtask |
+| **D62** | `createStore(state, (set, get) => members)` | Inferência de tipos sem interface |
+| **D63** | `selector` no runtime, emitido pelo compilador para `A === B` em linhas | select 3,6× → ~1× |
+| **D64** | `text` volta como fast path escalar; `list(null, marker)` lê o pai da âncora | Tamanho do counter; listas em children |
+| **D65** | HMR formalizado em `jotastic/runtime/hmr` (dev only) | Contrato completo |
+| — | Efeito é escopo (cleanups e efeitos aninhados morrem na reexecução) | Modelo do Solid; evita acúmulo |
+| — | `Boundary.error` recebe `Error` (não-Error embrulhado) | DX nos exemplos |
+| — | D29 confirmada pelo benchmark: sem delegação (ganho < 10%) | Medido |
+
 ## Compilador, runtime e tooling
 
 | ID | Decisão | Por quê |

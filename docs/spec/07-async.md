@@ -37,6 +37,7 @@ Um único componente de fronteira, explícito, sem props injetadas no componente
 - `pending`: mostrado enquanto qualquer descendente async (até o próximo `<Boundary>`) está no **primeiro** carregamento.
 - `error`: recebe erros síncronos, de `await`, de handlers e de efeitos ([09](09-erros.md)). `retry` recria a subárvore.
 - Sem `pending`, os filhos aparecem quando estiverem prontos. Sem `error`, o erro sobe para o próximo `<Boundary>` ou para o `onError` do `mount`.
+- Um descendente async **novo** (um branch que troca para um componente com `await`) volta o boundary a `pending`; recargas de recursos já carregados não.
 - Para um "skeleton padrão" de um componente, embrulhe-o: `const UserPageWithSkeleton = (p) => <Boundary pending={<Skeleton />}><UserPage {...p} /></Boundary>`.
 
 ### Recarga mantém o conteúdo antigo

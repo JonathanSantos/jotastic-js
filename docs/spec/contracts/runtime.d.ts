@@ -87,6 +87,8 @@ export interface EffectOptions extends DevMeta {
  * - A função pode devolver um cleanup, executado antes da próxima execução e no dispose.
  * - Dependências são recoletadas a cada execução.
  * - Pertence ao owner atual (`getOwner()`); é descartado com ele. Fora de owner: erro `use-outside-owner` em dev, vive para sempre em prod.
+ * - **O efeito é um escopo**: `onCleanup`, efeitos e memos criados durante uma execução pertencem a ela e são descartados
+ *   antes da próxima execução e no dispose (D-N4/N5).
  * - Durante a execução, `abortSignal()` devolve um AbortSignal abortado no cleanup (D54).
  * - Loop guard: se o mesmo efeito for re-executado 100 vezes dentro de um único `flush()`, lança `effect-loop`.
  * - Erro dentro de `fn` → `handleError(owner, e, kind === 'render' ? 'binding' : 'effect')`; o efeito continua vivo.
@@ -212,6 +214,12 @@ export function template(html: string, svg?: boolean): () => Element
  */
 export function insert(parent: Node, value: unknown, marker?: Node | null): void
 
+/**
+ * Fast path escalar (D64): substitui o comentário `<!>` por um Text na primeira execução e depois só escreve `.data` se mudou.
+ * O compilador o emite quando a expressão é provavelmente primitiva; caso contrário usa `insert`.
+ */
+export function text(marker: Comment | Text, read: () => unknown): void
+
 /** `setAttribute(name, String(v))`; `null | undefined | false` → `removeAttribute`. `true` → `""`. */
 export function attr(el: Element, name: string, read: () => unknown): void
 /** `el[name] = v` (value, checked, selected, innerHTML, textContent, muted, volume…). Guard: só escreve se `el[name] !== v`. Para `value`, compara como string. */
@@ -267,7 +275,7 @@ export function autofocus(el: Element): void
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Resultado de um componente / de uma expressão de JSX. Funções são accessors (lazy). */
-export type Rendered = Node | Node[] | string | number | boolean | null | undefined | (() => Rendered)
+export type Rendered = Node | Rendered[] | string | number | boolean | null | undefined | (() => Rendered)
 
 /**
  * Invoca um componente dentro de um owner próprio (kind 'component', name = Comp.name em dev).
@@ -300,13 +308,24 @@ export function branches(cases: Array<[cond: () => boolean, render: () => Render
  * - Nós são inseridos antes de `marker` (ou ao fim de `parent` se null).
  */
 export function list<T>(
-  parent: Node,
+  /** `null` (D64): o pai é lido de `marker.parentNode` a cada reconciliação (listas em children de componente, fragmentos, condicionais). */
+  parent: Node | null,
   marker: Node | null,
   source: () => readonly T[],
-  render: (item: T, index: () => number) => Rendered,
+  /** `item` é LAZY (D58): cada linha guarda um Signal<T>; chave igual com referência nova → `set(novo)`, nós preservados, bindings vivos. */
+  render: (item: () => T, index: () => number) => Rendered,
   key?: (item: T, index: number) => unknown,
   dev?: DevMeta,
 ): void
+
+/**
+ * Seleção por valor (D63). `selector(() => selectedId)` devolve `(v) => boolean` que assina POR VALOR: mudar a seleção
+ * notifica só os observadores do valor antigo e do novo. O compilador o emite para `A === B` dentro de linhas de lista.
+ */
+export function selector<T>(source: () => T, equals?: (a: T, b: T) => boolean): (value: T) => boolean
+
+/** Thunk compartilhado para parâmetros ausentes de `use*` (D59). */
+export const _void: () => undefined
 
 /**
  * Memoiza os children resolvidos de um componente (evita criar nós duas vezes quando `props.children` é lido mais de uma vez).
@@ -406,6 +425,7 @@ export function boundary(props: BoundaryProps): () => Rendered
  * - `get()` antes de criar: em dev lança `ref-before-mount`; em prod devolve undefined.
  * - Dispose/recriação: `destroy(value)` se informado; senão o primeiro que existir: [Symbol.dispose], destroy, dispose, disconnect, unsubscribe;
  *   `close`/`abort`/`terminate` só se `value instanceof` WebSocket | EventSource | AbortController | Worker | MessagePort | IDBDatabase.
+ * - Se o valor é uma função, ela é chamada como destroy (padrão `subscribe` → `unsubscribe`).
  */
 export function external<T>(create: () => T, update?: (value: T) => void, destroy?: (value: T) => void, dev?: DevMeta): Signal<T>
 
@@ -439,8 +459,8 @@ export interface Context<T> {
   readonly defaultValue: T | undefined
 }
 export function createContext<T>(defaultValue?: T): Context<T>
-/** Registra `value` no owner atual. */
-export function provide<T>(ctx: Context<T>, value: T): void
+/** Registra `value` no owner atual. O compilador passa um getter; `useContext` lê um memo dele (valor reativo). */
+export function provide<T>(ctx: Context<T>, value: () => T): void
 /** Sobe pela cadeia de owners; se não achar, `defaultValue`; se nem isso, erro em dev. */
 export function useContext<T>(ctx: Context<T>): T
 
@@ -467,3 +487,17 @@ export function inspect(dev: DevMeta, ...reads: Array<() => unknown>): void
 
 /** Hook do devtools. Ver ./devtools.d.ts. */
 export function emitDevtools(event: import('./devtools').DevtoolsEvent): void
+
+/** Modo de teste (`@jotastic/test`): erros não tratados pelo root são relançados em vez de irem para `console.error`. */
+export function __setTestMode(on: boolean): void
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `jotastic/runtime/hmr` (dev only; usado pelo plugin Vite, não pelo dev) — D65
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface HmrOptions { preserveState?: boolean }
+/** Registra os componentes exportados de `file`; devolve wrappers que remontam a instância quando o módulo recarrega. */
+export function __hmrComponents<T extends Record<string, Function>>(file: string, comps: T, opts?: HmrOptions): T
+export function __hmrResetRegistry(): void
+/** Em `jotastic/store`: preserva stores de módulo entre recargas. */
+export function __hmrStores<T extends Record<string, unknown>>(data: Record<string, unknown>, stores: T, reset?: boolean): T

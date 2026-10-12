@@ -5,32 +5,34 @@ Um "mini Zustand" reativo: store fora da árvore, sem Provider, estado e ações
 ```ts
 import { createStore } from 'jotastic/store'
 
-export const cart = createStore((set, get) => ({
-  // estado
-  items: [] as CartItem[],
-  coupon: null as string | null,
+export const cart = createStore(
+  // 1) estado: o tipo é inferido daqui
+  { items: [] as CartItem[], coupon: null as string | null },
 
-  // derivados: getters viram memos
-  get count() { return get().items.reduce((n, i) => n + i.qty, 0) },
-  get total() {
-    const { items, coupon } = get()
-    const sum = items.reduce((s, i) => s + i.price * i.qty, 0)
-    return coupon ? sum * 0.9 : sum
-  },
+  // 2) membros: getters viram memos, funções viram ações
+  (set, get) => ({
+    get count() { return get().items.reduce((n, i) => n + i.qty, 0) },
+    get total() {
+      const { items, coupon } = get()
+      const sum = items.reduce((s, i) => s + i.price * i.qty, 0)
+      return coupon ? sum * 0.9 : sum
+    },
 
-  // ações
-  add: (product: Product) => set(s => {
-    const existing = s.items.find(i => i.id === product.id)
-    if (existing) existing.qty++                        // mutação no draft
-    else s.items.push({ ...product, qty: 1 })
+    add: (product: Product) => set(s => {
+      const existing = s.items.find(i => i.id === product.id)
+      if (existing) existing.qty++                        // mutação no draft
+      else s.items.push({ ...product, qty: 1 })
+    }),
+    remove: (id: string) => set(s => ({ items: s.items.filter(i => i.id !== id) })),   // retorno = merge
+    applyCoupon: async (code: string) => {
+      const ok = await api.validateCoupon(code)
+      if (ok) set({ coupon: code })
+    },
   }),
-  remove: (id: string) => set(s => ({ items: s.items.filter(i => i.id !== id) })),   // retorno = merge
-  applyCoupon: async (code: string) => {
-    const ok = await api.validateCoupon(code)
-    if (ok) set({ coupon: code })
-  },
-}))
+)
 ```
+
+Dois argumentos (D62): o estado dá o tipo por inferência, sem interface nem generics; os membros são tipados com ele. O estado pode ser uma função (`() => ({ … })`) quando precisa ser recriado no `$reset`.
 
 ## `set` tem uma assinatura
 
@@ -50,8 +52,8 @@ Em todos os casos só os assinantes das propriedades que de fato mudaram são no
 
 ## Ações e batch
 
-- Cada ação síncrona (e o trecho síncrono de uma ação async) é um batch: uma rodada de atualização.
-- Depois de cada `await`, cada `set` é seu próprio batch. Não existe `runInAction`.
+- Cada ação síncrona (e o trecho síncrono de uma ação async) é um batch: uma rodada de atualização no próximo microtask, como todo o resto da lib (D61).
+- Depois de cada `await`, `set` continua funcionando sem contexto de ação. Não existe `runInAction`.
 
 ## Leitura em componentes
 
@@ -66,8 +68,8 @@ const { count, total } = cart        // no corpo raiz vira dois derivados; conti
 
 ```ts
 cart.$subscribe(s => s.total, (total, prev) => analytics.track('total', total))   // fase 2
-cart.$snapshot()      // cópia plana sem proxy (logs, serialização)
-cart.$reset()         // estado inicial
+cart.$snapshot()      // cópia plana do estado, sem proxy, sem getters nem ações
+cart.$reset()         // volta ao primeiro argumento
 cart.$name            // nome para o devtools (inferido do export)
 ```
 
@@ -82,4 +84,4 @@ const EditorStore = defineStore((set, get) => ({ … }))
 
 ## Implementação
 
-Construído sobre `store()` do runtime (proxy profundo e lazy). ~100 linhas: chama a factory, separa estado/getters/ações, embrulha ações em `batch`, expõe a visão readonly, registra no devtools em dev. Alvo: < 1 KB gzip adicional.
+Construído sobre `reactive()` do runtime (proxy profundo e lazy). ~100 linhas: `reactive(state)`, chama `members(set, get)`, getters → memos, funções → `batch` + `inAction`, visão readonly fora de ações, registra no devtools em dev. Alvo: < 1 KB gzip adicional.

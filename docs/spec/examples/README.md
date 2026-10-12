@@ -17,4 +17,5 @@ Código do ponto de vista de quem usa a lib. Cada arquivo cobre um cenário e se
 | [11-tabs-context.tsx](11-tabs-context.tsx) | Componentes compostos | `createContext`, `Tabs`/`Tabs.Tab` *(fase 2)* |
 | [12-react-vs-jotastic.tsx](12-react-vs-jotastic.tsx) | Migração | O mesmo componente em React e em Jotastic, lado a lado |
 | [13-slots.tsx](13-slots.tsx) | Slots nomeados | `<Slot name>` + `useSlots`: slot padrão, nomeado, com parâmetro e condicional, resolvidos em build |
+| [lib/api.ts](lib/api.ts) | Camada de API | `jotastic/fetch`: cancelamento sem `signal` nos componentes; usada pelos exemplos 04, 06, 10 e 12 |
 | [14-use-form.ts](14-use-form.ts) | Receita de formulário | `useForm` em ~50 linhas só com `let`, derivados e `tick`; base do futuro `@jotastic/form` |

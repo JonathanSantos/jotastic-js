@@ -3,13 +3,12 @@ import { createStore } from 'jotastic/store'
 export interface Product { id: string; name: string; price: number }
 export interface CartItem extends Product { qty: number }
 
-export const cart = createStore((set, get) => ({
-  // estado
-  items: [] as CartItem[],
-  coupon: null as string | null,
-  couponError: null as string | null,
+export const cart = createStore(
+  // estado (o tipo é inferido daqui)
+  { items: [] as CartItem[], coupon: null as string | null, couponError: null as string | null },
 
-  // derivados (getters viram memos)
+  // membros: getters viram memos, funções viram ações
+  (set, get) => ({
   get count() { return get().items.reduce((n, i) => n + i.qty, 0) },
   get subtotal() { return get().items.reduce((s, i) => s + i.price * i.qty, 0) },
   get total() { return get().coupon ? get().subtotal * 0.9 : get().subtotal },
@@ -32,11 +31,12 @@ export const cart = createStore((set, get) => ({
 
   applyCoupon: async (code: string) => {
     set({ couponError: null })
-    const ok = await api.validateCoupon(code)          // depois do await, cada set é seu próprio batch
+    const ok = await api.validateCoupon(code)          // depois do await, `set` continua funcionando
     if (ok) set({ coupon: code })
     else set({ couponError: 'Cupom inválido' })
   },
-}))
+  }),
+)
 
 // cart.items.push(x)   → erro de TS (DeepReadonly) e aviso em dev: use as ações
 // cart.$snapshot()     → cópia plana para logs / testes

@@ -29,7 +29,7 @@ export default { plugins: [jotastic({ devtools: true })] }
 
 Tipos JSX: atributos HTML tipados (nomes do React em camelCase e do HTML), `class`/`for`, `on:*`, `ref`, `key`, `e.currentTarget` tipado por elemento, `Slot`/`useSlots` tipados por nome.
 
-Opções do plugin: `devtools` (padrão em dev), `autoImport` (importa `watch`, `on`, `external`, `onMount`, `inspect` automaticamente, com tipos globais gerados; desligado por padrão), `hmr.preserveState`.
+Opções do plugin: `devtools` (padrão em dev), `hmr.preserveState`. `autoImport` fica para a fase 2.
 
 ## ESLint
 
@@ -73,7 +73,7 @@ const { container, unmount } = render(<Counter label="x" />)
 container.querySelector('button')!.click()
 await tick()
 expect(container.textContent).toContain('x: 1')
-expect(counts()).toEqual({ bindings: 1, memos: 1 })     // prova: só 1 binding rodou
+expect(counts()).toMatchObject({ effects: 1, memos: 1 })     // prova: só 1 efeito rodou
 ```
 
 Roda em `happy-dom`/`jsdom` com Vitest. Os exemplos oficiais usam exatamente isso.

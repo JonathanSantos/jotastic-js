@@ -78,7 +78,7 @@ Para colocar pedaços dos `children` em lugares diferentes, por nome, sem o `Chi
 import { Slot, useSlots } from 'jotastic'
 
 function Card({ children }: ParentProps) {
-  const slots = useSlots<'header' | 'footer' | 'row'>(children)
+  const slots = useSlots<{ header: JSX.Element; footer: JSX.Element; row: (item: Item) => JSX.Element }>(children)
   return (
     <section class="card">
       {slots.header && <header>{slots.header}</header>}
@@ -98,7 +98,7 @@ function Card({ children }: ParentProps) {
 ```
 
 - **Resolvido em build**: o compilador vê os `<Slot name>` diretos (também dentro de fragmentos, `&&` e ternários) e transforma os `children` em `{ header, footer, row, default }`, cada um um getter lazy. Zero filtragem em runtime.
-- `slots.x` é `JSX.Element | undefined` e reativo; um slot com função vira `(…args) => JSX.Element`.
+- `slots.x` é tipado pelo mapa passado a `useSlots` e é reativo; um slot com função vira `(…args) => JSX.Element`.
 - `<Slot>` dentro de `.map`, de outro elemento ou de outro componente é erro `slot-not-direct-child`.
 - Sem `useSlots`, `{children}` continua funcionando como sempre.
 - Não há API genérica para filtrar children por tipo: depois de rodar, um componente vira nós do DOM. Para o caso "embrulhar cada filho em `<li>`", `useChildren(children)` devolve o array de nós (fase 2).
@@ -141,7 +141,7 @@ Tabs.Tab = function Tab({ id, children }: ParentProps<{ id: string }>) {
 }
 ```
 
-`useContext` lê o Provider mais próximo na árvore de owners (sem Provider global). No MVP, use um store local passado por prop.
+`useContext` lê o Provider mais próximo na árvore de owners (sem Provider global). `value` é lido de forma lazy: se for reativo, os consumidores acompanham. No MVP, use um store local passado por prop.
 
 ### Portal
 

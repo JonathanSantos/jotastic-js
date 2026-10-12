@@ -95,7 +95,9 @@ Ambiente: `happy-dom`. Helper `counts()` do `@jotastic/test` devolve `{ effects,
 | F5 | `list`: inserir no início | 1 nó inserido; os outros `isSameNode` |
 | F6 | `list`: mover item | nó movido (mesma referência), `index()` atualizado |
 | F7 | `list`: editar 1 campo | só os bindings daquele item rodam (`counts().effects === 1`) |
-| F8 | `list`: chave padrão `id` | reatribuir array com mesmos ids preserva nós |
+| F8 | `list`: chave padrão `id` | reatribuir array com mesmos ids e objetos novos preserva nós **e** os bindings mostram os dados novos (D58) |
+| F17 | `selector` | mudar a seleção roda só os efeitos das linhas antiga e nova (`effects: 2`) |
+| F18 | `list(null, marker, …)` | lista em children de componente reconcilia no pai atual |
 | F9 | `list`: todos removidos e novos | evento `list:recreated` |
 | F10 | `list` de primitivos | mudar valor na posição recria só aquela linha |
 | F11 | `keyed` | mudar key recria; mesma key não |
@@ -136,7 +138,7 @@ Ambiente: `happy-dom`. Helper `counts()` do `@jotastic/test` devolve `{ effects,
 | S1 | ação síncrona com 3 `set` | 1 flush |
 | S2 | `set` objeto / fn com retorno / fn mutadora | mesmo resultado; só assinantes das chaves mudadas rodam |
 | S3 | getter | memoizado; recalcula só quando o que lê muda |
-| S4 | ação async | cada `set` após `await` é um flush próprio |
+| S4 | ação async | `set` após `await` funciona sem contexto de ação; efeitos veem o valor final no próximo microtask; 2 `set` no mesmo microtask = 1 flush (D61) |
 | S5 | mutação fora de ação (dev) | aviso `store-mutated-outside-action` |
 | S6 | `$snapshot`/`$reset` | cópia sem proxy; volta ao inicial |
 
@@ -153,9 +155,9 @@ Ambiente: `happy-dom`. Helper `counts()` do `@jotastic/test` devolve `{ effects,
 
 | Exemplo | Interação | Esperado |
 |---|---|---|
-| Counter | clique em +5 | `effects: 4` (count, double, classList, disabled); `Counter` não reexecuta |
+| Counter | clique em +5 | `effects: 4` (text count, text double, classList, disabled); `Counter` não reexecuta |
 | Todos | digitar 1 letra | `effects: 1` (prop value do input), lista intocada |
-| Todos | marcar 1 item | `effects: 1` (classList do li) + memos `remaining`/`allDone` |
+| Todos | marcar 1 item | efeitos **daquele** li: classList + prop checked (sem escrita); footer: text remaining + text "item/itens"; primeiro item marcado: +2 (branch "Limpar concluídas"). **Zero efeitos em outros itens**; `<ul>` sem escritas |
 | Todos | adicionar item | 1 nó inserido; itens existentes `isSameNode` |
 | Cart | `cart.add` | só `count`/`total`/linha nova |
 | UserCard | `id` muda | 1 requisição nova, anterior abortada, texto do nome atualiza 1× |
@@ -163,4 +165,5 @@ Ambiente: `happy-dom`. Helper `counts()` do `@jotastic/test` devolve `{ effects,
 ## Tamanho e benchmark (M3+)
 
 - `size.test.ts`: build de `examples/counter` e `examples/todomvc` com Vite + brotli; falha se > 3 KB / > 6 KB (ajustável até o M8, nunca acima de `≤ Solid`).
-- `bench/`: js-framework-benchmark local; CI compara com o resultado salvo do Solid e falha se > +10%.
+- `bench/`: js-framework-benchmark local; CI compara com o resultado salvo do Solid e falha se > Solid + 10% **e** > Solid + 2 ms, em 2 de 3 execuções (G-6).
+- Limites provisórios até o M8: counter 3,5 KB (meta 3 KB com `text`), TodoMVC 7 KB, async 9 KB (informativo).

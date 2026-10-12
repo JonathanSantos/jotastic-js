@@ -40,6 +40,7 @@ export function useLocalStorage<T>(key: string, initial: T) {
 export function useMediaQuery(query: string) {
   const mql = window.matchMedia(query)                      // derivado: recria se `query` mudar
   let matches = mql.matches
+  watch(() => (matches = mql.matches))                      // sincroniza quando `mql` é recriado
   on(mql, 'change', e => (matches = e.matches))             // alvo lazy: re-liga quando `mql` muda
   return { matches }
 }

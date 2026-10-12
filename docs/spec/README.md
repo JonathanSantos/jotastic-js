@@ -64,6 +64,8 @@ export async function UserPage({ id }: { id: string }) {
 | 19 | [Plano de testes](19-plano-de-testes.md) | Testes de contrato com asserções exatas, por marco |
 | 20 | [Guia de implementação](20-guia-de-implementacao.md) | Ferramentas, ordem obrigatória, definição de pronto |
 | — | [Saídas compiladas](compiled/README.md) | Seis arquivos compilados à mão: primeiros snapshots e primeiros testes do runtime |
+| 21 | [Pendências](21-pendencias.md) | Casos concretos encontrados na implementação (registro) |
+| 22 | [Decisões pós-implementação](22-decisoes-pos-implementacao.md) | D58–D65 e o que muda em contrato, spec, código e testes |
 | — | [Exemplos](examples/README.md) | O que o dev escreve: counter, todos, form, rotas, estilo, async, `use*`, store, libs externas, modal, tabs, React vs Jotastic |
 
 ## Os nove pilares

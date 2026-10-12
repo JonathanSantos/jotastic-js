@@ -48,7 +48,7 @@ A fachada é própria. O motor de signals pode ser o `alien-signals` (avaliado n
 - Um signal por propriedade (criado sob demanda). Ler `todo.done` assina só `done`.
 - **Um sinal estrutural por array** (`length`/ordem): `list()` tem uma assinatura, não uma por índice.
 - Métodos de array (`push`, `splice`, `sort`...) rodam em batch e notificam a estrutura + índices afetados.
-- `includes`/`indexOf`/`lastIndexOf`/`Map.has`: comparam raw e proxy.
+- `includes`/`indexOf`/`lastIndexOf`: comparam raw e proxy (`Map`/`Set` não são proxiados).
 - Só POJO e array são proxiados. Classes, `Map`, `Set`, `Date`, DOM, `File`, `Promise` passam intactos.
 - Atribuir um objeto a uma propriedade **troca a referência** (o novo vira proxy lazy). `reconcile(prev, next)` (fase 2) mescla por chave quando o dev quer identidade estável.
 - Em dev: proxies readonly para resultados de memo e para stores fora de ações (avisam ao escrever).

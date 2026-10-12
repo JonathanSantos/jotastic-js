@@ -53,7 +53,8 @@ export function abortSignal(): AbortSignal
 
 export interface BoundaryProps {
   pending?: JSX.Element
-  error?: (error: unknown, retry: () => void) => JSX.Element
+  /** Não-Error lançados são embrulhados em `Error` pelo runtime (`cause` guarda o original). */
+  error?: (error: Error, retry: () => void) => JSX.Element
   children?: JSX.Element
 }
 export function Boundary(props: BoundaryProps): JSX.Element
@@ -62,9 +63,9 @@ export function Portal(props: { to: Element; children?: JSX.Element }): JSX.Elem
 export function Slot(props: { name: string; children?: JSX.Element | ((...args: any[]) => JSX.Element) }): JSX.Element
 
 export type SlotFn = (...args: any[]) => JSX.Element
-export type Slots<N extends string = never> = { default: JSX.Element } & { [K in N]?: JSX.Element | SlotFn }
-/** Tipagem do objeto de slots que o compilador gerou para `children`. */
-export function useSlots<N extends string = never>(children: JSX.Element | undefined): Slots<N>
+/** Mapa de slots: `useSlots<{ header: JSX.Element; row: (item: Item) => JSX.Element }>(children)`. */
+export type Slots<S extends Record<string, JSX.Element | SlotFn> = {}> = { default: JSX.Element } & Partial<S>
+export function useSlots<S extends Record<string, JSX.Element | SlotFn> = {}>(children: JSX.Element | undefined): Slots<S>
 
 // contexto (fase 2, já tipado)
 export interface Context<T> { readonly id: symbol; readonly defaultValue: T | undefined; Provider: Component<{ value: T; children?: JSX.Element }> }
@@ -90,23 +91,28 @@ export type DeepReadonly<T> =
 
 export type SetFn<S> = (update: Partial<S> | ((draft: S) => Partial<S> | void)) => void
 
-export type Store<S extends object> = DeepReadonly<S> & {
-  /** Cópia plana, sem proxy. */
+export type Store<S extends object, M extends object> = DeepReadonly<S> & M & {
+  /** Cópia plana do ESTADO, sem proxy (sem getters nem ações). */
   $snapshot(): S
-  /** Volta ao estado inicial (reexecuta a factory). */
+  /** Volta ao estado inicial (reavalia `state` se for função). */
   $reset(): void
-  /** Nome para o devtools (inferido do export pelo compilador; pode ser passado em `createStore(factory, { name })`). */
+  /** Nome para o devtools (inferido do export pelo compilador; ou `options.name`). */
   readonly $name: string
 }
 
 /**
- * - `factory` roda uma vez. Propriedades: funções → ações (embrulhadas em `batch` + flag `inAction`); getters → memos; resto → estado reativo.
+ * D62: dois argumentos. `state` (objeto ou função que o devolve) é o estado reativo e dá o tipo `S` por inferência.
+ * `members(set, get)` devolve getters (viram memos) e ações (embrulhadas em `batch` + flag `inAction`).
  * - `get()` devolve o estado (mutável dentro de ações, readonly fora — em dev avisa `store-mutated-outside-action`).
  * - `set`: objeto → merge raso; função com retorno → merge do retorno; função sem retorno → mutações no draft valem.
  *   Cada folha compara `Object.is`; objetos trocam de referência (sem reconcile).
- * - Ação async: o trecho síncrono até o primeiro `await` é um batch; depois, cada `set` é seu próprio batch.
+ * - Nenhum flush síncrono (D61): o DOM atualiza no microtask, como em todo o resto da lib.
  */
-export function createStore<S extends object>(factory: (set: SetFn<S>, get: () => S) => S, options?: { name?: string }): Store<S>
+export function createStore<S extends object, M extends object = {}>(
+  state: S | (() => S),
+  members?: (set: SetFn<S>, get: () => S) => M,
+  options?: { name?: string },
+): Store<S, M>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // `jotastic/fetch`

@@ -7,7 +7,7 @@
 declare global {
   namespace JSX {
     /** Valor que um componente/expressão pode produzir. Opaco para o dev; o compilador garante lazy. */
-    type Element = Node | Node[] | string | number | boolean | null | undefined | (() => Element)
+    type Element = Node | Element[] | string | number | boolean | null | undefined | (() => Element)
 
     /** Permite `async function Comp()` (TS 5.1+): componentes podem devolver Promise<Element>. */
     type ElementType = string | ((props: any) => Element | Promise<Element>)
@@ -22,9 +22,22 @@ declare global {
 
     // ── Eventos ──────────────────────────────────────────────────────────────
     /** `onClick` → click; `onClickCapture` → capture. `currentTarget` tipado pelo elemento. */
-    type EventHandler<T, E extends Event> = (e: E & { currentTarget: T; target: Element }) => unknown
+    type EventHandler<T, E extends Event> = (e: E & { currentTarget: T; target: globalThis.Element }) => unknown
+    /** Nomes compostos no estilo React (o compilador minusculiza): dblclick → DblClick, keydown → KeyDown… */
+    type CamelEventNames = {
+      dblclick: 'DblClick'; keydown: 'KeyDown'; keyup: 'KeyUp'; keypress: 'KeyPress'
+      mousedown: 'MouseDown'; mouseup: 'MouseUp'; mousemove: 'MouseMove'; mouseenter: 'MouseEnter'; mouseleave: 'MouseLeave'; mouseover: 'MouseOver'; mouseout: 'MouseOut'
+      pointerdown: 'PointerDown'; pointerup: 'PointerUp'; pointermove: 'PointerMove'; pointerenter: 'PointerEnter'; pointerleave: 'PointerLeave'; pointercancel: 'PointerCancel'
+      touchstart: 'TouchStart'; touchend: 'TouchEnd'; touchmove: 'TouchMove'; touchcancel: 'TouchCancel'
+      focusin: 'FocusIn'; focusout: 'FocusOut'; contextmenu: 'ContextMenu'; dragstart: 'DragStart'; dragend: 'DragEnd'; dragenter: 'DragEnter'; dragleave: 'DragLeave'; dragover: 'DragOver'
+      animationstart: 'AnimationStart'; animationend: 'AnimationEnd'; animationiteration: 'AnimationIteration'; transitionend: 'TransitionEnd'
+      compositionstart: 'CompositionStart'; compositionend: 'CompositionEnd'; compositionupdate: 'CompositionUpdate'
+      loadeddata: 'LoadedData'; loadedmetadata: 'LoadedMetadata'; canplay: 'CanPlay'; canplaythrough: 'CanPlayThrough'; timeupdate: 'TimeUpdate'; volumechange: 'VolumeChange'
+      beforeinput: 'BeforeInput'; selectionchange: 'SelectionChange'; durationchange: 'DurationChange'; ratechange: 'RateChange'
+    }
+    type EventPropName<K extends string> = K extends keyof CamelEventNames ? CamelEventNames[K] : Capitalize<K>
     type EventAttributes<T> = {
-      [K in keyof HTMLElementEventMap as `on${Capitalize<K>}` | `on${Capitalize<K>}Capture`]?: EventHandler<T, HTMLElementEventMap[K]>
+      [K in keyof HTMLElementEventMap as `on${EventPropName<K>}` | `on${EventPropName<K>}Capture`]?: EventHandler<T, HTMLElementEventMap[K]>
     } & {
       /** Eventos customizados com nome exato: `on:item-selected`. */
       [K in `on:${string}`]?: EventHandler<T, CustomEvent>
@@ -54,7 +67,7 @@ declare global {
      * O compilador normaliza. `for` em vez de `htmlFor` (aceito com aviso).
      */
     interface HTMLAttributes<T> extends DOMAttributes<T> {
-      id?: string; title?: string; lang?: string; dir?: 'ltr' | 'rtl' | 'auto'
+      id?: string; title?: string | number; lang?: string; dir?: 'ltr' | 'rtl' | 'auto'
       tabIndex?: number; tabindex?: number
       role?: string; draggable?: boolean; contentEditable?: boolean | 'inherit'; spellcheck?: boolean
       accessKey?: string; autocapitalize?: string; translate?: 'yes' | 'no'
@@ -82,7 +95,7 @@ declare global {
     interface AnchorHTMLAttributes<T> extends HTMLAttributes<T> { href?: string; target?: string; rel?: string; download?: string | boolean }
     interface FormHTMLAttributes<T> extends HTMLAttributes<T> { action?: string; method?: string; novalidate?: boolean; noValidate?: boolean; autocomplete?: string; enctype?: string }
     interface LabelHTMLAttributes<T> extends HTMLAttributes<T> { for?: string; /** @deprecated use `for` */ htmlFor?: string }
-    interface ImgHTMLAttributes<T> extends HTMLAttributes<T> { src?: string; alt?: string; width?: number | string; height?: number | string; loading?: 'lazy' | 'eager'; decoding?: 'async' | 'sync' | 'auto'; srcset?: string; sizes?: string }
+    interface ImgHTMLAttributes<T> extends HTMLAttributes<T> { src?: string; alt?: string | number; width?: number | string; height?: number | string; loading?: 'lazy' | 'eager'; decoding?: 'async' | 'sync' | 'auto'; srcset?: string; sizes?: string }
     interface DialogHTMLAttributes<T> extends HTMLAttributes<T> { open?: boolean }
     interface OptionHTMLAttributes<T> extends HTMLAttributes<T> { value?: string | number; selected?: boolean; disabled?: boolean; label?: string }
     interface SVGAttributes<T> extends DOMAttributes<T> { [attr: string]: any }

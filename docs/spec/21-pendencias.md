@@ -1,6 +1,8 @@
 # 21 — Pendências
 
-Lacunas e conflitos encontrados durante a implementação, com o caso concreto e o que foi feito por ora. Cada item precisa de decisão; até lá vale a solução provisória descrita.
+> **Resolvido em [22-decisoes-pos-implementacao.md](22-decisoes-pos-implementacao.md)** (2026-10-11). Este arquivo fica como registro dos casos concretos. Novas lacunas: adicionar aqui com ID novo e levar para o 22.
+
+Lacunas e conflitos encontrados durante a implementação, com o caso concreto e o que foi feito por ora.
 
 ## Tipos (jsx.d.ts / jotastic.d.ts)
 

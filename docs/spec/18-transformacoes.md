@@ -74,14 +74,15 @@ Aplicada em **todo** o corpo da função, inclusive closures, exceto onde um ide
 | `rest` (rest de props) | `_rest` onde `const _rest = rest(props, [chaves])` |
 | `p` (parâmetro posicional de `use*`) | `p()` |
 | `i` (índice de lista) | `i()` |
-| `item` (item de lista) | `item` (inalterado) |
+| `item` (item de lista) | `item()` (lazy, D58); `item.x = v` → `item().x = v`; `({ name }) =>` → `item().name` |
+| `provide`/`<Ctx.Provider value={x}>` | `provide(Ctx, () => x')` (getter; D-I3) |
 | `useX(a, b)` | `useX(() => a', () => b')` (cada argumento vira getter com as reescritas aplicadas dentro) |
 | `pending(r)` / `refresh(r)` | `_rN.pending.get()` / `_rN.refresh()` (r deve ser `resource`, senão erro) |
 | `abortSignal()` | inalterado (runtime ambiente) |
 | `external(c, u, d)` | `external(c', u', d', dev)` (c/u/d com reescritas) |
 | `on(t, e, h)` | `on(() => t', e, h')` |
 | `watch(fn)` | `effect(fn', dev)` |
-| `onMount(fn)` / `onCleanup(fn)` / `untrack` / `tick` / `raw` | inalterados (mapeados para os do runtime) |
+| `onMount(fn)` / `onCleanup(fn)` / `untrack` / `tick` / `raw` | inalterados, continuam importados de `jotastic` (§14) |
 | `inspect(a, b)` | dev: `inspect(dev, () => a', () => b')`; prod: removido |
 | `useSlots(children)` | `slots(props.children)` |
 | `useContext(C)` / `createContext` | inalterados |
@@ -98,6 +99,7 @@ Percorre a árvore JSX. Um nó é **estático** se é texto literal, ou elemento
 - Texto: segue as regras de whitespace do JSX do React (quebras de linha com indentação são removidas; espaços entre textos na mesma linha são mantidos). Textos adjacentes são mesclados. Escapar `<`, `&` e aspas na string do template.
 - Atributos estáticos vão para a string HTML (`class="btn"`, `type="checkbox"`, booleano true → `disabled`). `class={{…}}`/`class={[…]}` com apenas literais é dobrado em string.
 - Cada expressão `{…}` em posição de filho vira um marcador `<!>` no HTML, **exceto** quando é o único filho do elemento (então `insert(el, read, null)`).
+- Se a expressão é `isProbablyPrimitive` ou uma leitura simples de signal/memo/prop com inicializador primitivo, emitir `text(marker, read)` em vez de `insert` (D64). Ternários com JSX em algum lado viram `branches`; ternários só de escalares são `text`.
 - Cada atributo dinâmico vira um binding no elemento resolvido.
 
 ### 5.2 Resolução de nós
@@ -122,6 +124,8 @@ Normalização antes: `className` → `class` (aviso), `htmlFor` → `for` (avis
 | `data-*`, `aria-*`, SVG, desconhecidos, `id`, `title`, `type`, `name`, `placeholder`, `href`, `src`, `alt`, `for`, `role`, `tabIndex`→`tabindex`, `maxLength`→`maxlength`, … | attr | `attr(el, attrName, read)` |
 
 Em `spread`, a mesma tabela é consultada em runtime por `attributeKind`.
+
+`prop(select, 'value')` é emitido **depois** dos bindings dos filhos do `<select>` (as `<option>` precisam existir).
 
 ### 5.4 Eventos
 
@@ -151,7 +155,7 @@ Elemento `svg` ou descendente de `svg` (exceto dentro de `foreignObject`) → `t
 keyed(() => k', () => component(Comp, mergeProps({ a: 'x', get b() { return expr' }, c: fn' }, sp'), dev))
 ```
 
-- Literal → valor. Expressão com leituras reativas ou qualquer chamada/membro → getter. Função/arrow → valor.
+- Literal → valor. Expressão com leituras reativas, qualquer chamada/membro **ou identificador de `let`** (inclusive `ref`) → getter. Função/arrow → valor.
 - Sem `key` → sem `keyed`. Sem spread → objeto literal direto (sem `mergeProps`).
 - `children`: um filho JSX → `get children() { return <compilado> }`; vários → getter que devolve array; função (`{item => …}`) → valor; com `<Slot>` → §12.
 - `ref` em componente: fase 2 (erro `component-ref-unsupported` no MVP).
@@ -182,7 +186,9 @@ Emissão: `list(parent, marker, () => SRC_CHAIN', (item, i) => BODY', key?, dev)
 
 - `key`: se o elemento raiz do corpo tem `key={k}` → `(item, i) => k'` (com `item`/`i` em escopo) e o atributo é removido; senão omitido (padrão do runtime).
 - O corpo do callback é compilado como um mini-corpo reativo: `const`/`let` dentro dele seguem §3 (`let` vira signal se lido no JSX do item).
-- Parâmetro de índice: reescrito para `i()`.
+- Parâmetro de item: **lazy** (D58), toda leitura vira `item()`. Parâmetro de índice: `i()`.
+- **Seleção** (D63): se dentro do corpo há `A === B` / `A !== B` / `Object.is(A, B)` em contexto vivo onde um lado lê só bindings de fora da linha e o outro lê o item, emitir antes do `list`: `const _selN = selector(() => A')` e, na linha, `_selN(B')` (negado para `!==`).
+- Pai: em children de componente, fragmento ou condicional, a lista não tem elemento pai fixo → o compilador emite uma âncora via `insert` do pai e chama `list(null, marker, …)` (D64).
 - `.map` sem JSX no corpo é JS normal.
 - `const rows = items.map(…)` → `const rows = list…`? Não: emite `const rows = () => …` como accessor usando um `DocumentFragment`? **Decisão:** `const` de lista vira uma função `_rows = (parent, marker) => list(parent, marker, …)` e o `{rows}` no JSX vira `_rows(parent, marker)`. Se `rows` for usado em mais de um lugar → erro `list-const-used-twice`.
 
@@ -204,7 +210,7 @@ Saída: `return branches([[c1, r1], …], () => { continuação…; return <fina
 
 Só `await` no **escopo raiz** (não em callbacks, não em `if` sem return). Para cada um, em ordem:
 
-1. `const x = await EXPR` → `const _rN = resource(() => EXPR', dev)`. Dentro de `EXPR'`, leituras reativas assinam (o `resource` roda em efeito de render).
+1. `const x = await EXPR` → `const _rN = resource(() => EXPR', dev)`. Dentro de `EXPR'`, leituras reativas assinam (o `resource` roda em efeito de render). `const x = f(await EXPR)` ou `(await EXPR).y` → o `await` é hoisted para `_rN` e substituído por `_rN.value.get()` no inicializador (um só `await` por declarador); outros casos → `await-position-unsupported`. `await` em `use*` → `await-in-use-unsupported` (MVP).
 2. Tudo depois dele até o próximo `await`/ponto de decisão é continuação: `continuation(_rN, () => { … })`. Awaits seguintes aninham continuações.
 3. Leituras de `x` → `_rN.value.get()`. Se `let x = await` → escritas `x = v` → `_rN.value.set(v)`, e `x.campo = v` funciona pelo proxy.
 4. `await EXPR` sem declarador → `resource` sem variável (só espera).
@@ -218,7 +224,7 @@ A função compilada **não** é `async` (o `async` é removido). O tipo públic
 
 ## 11. Funções `use*`
 
-- Parâmetros: cada parâmetro posicional `p` (com ou sem default, com ou sem desestruturação) é recebido como getter. Default: `p() ?? default`. Desestruturação `({ a, b })` → `p().a`. Rest `(...args)` → `args` é array de getters.
+- Parâmetros: cada parâmetro posicional `p` é recebido como getter. **Defaults em thunk no callee** (D59): sem default → `p = _void`; com default `p = expr` → `p = () => expr`. Desestruturação `({ a, b })` → `p().a`. Rest `(...args)` → array de getters (leitura `args.map(g => g())`). Escrita em parâmetro → erro `use-param-assignment`; `useX(...xs)` → erro `use-spread-args-unsupported`.
 - Corpo: §3/§4 completos, incluindo early return (sem JSX: `return` dentro de `if` em `use*` é JS normal e **não** vira branch; só componentes têm fluxo reativo).
 - Retorno:
   - objeto literal → por propriedade conforme [17](17-contratos.md#convenções-de-emissão-descobertas-nas-saídas-compiladas);
@@ -233,7 +239,7 @@ Nos children de um **componente**: percorrer filhos diretos, atravessando fragme
 
 - com filhos JSX → `n: () => <compilado>`;
 - com um único filho função → `n: (…args) => <compilado>`;
-- dentro de `&&`/ternário → `get n() { return cond' ? (() => …) : undefined }`.
+- dentro de `&&`/ternário → `get n() { return cond' ? (() => …) : undefined }`; se o outro lado do ternário não é `<Slot>`, ele vai para `default` com o getter complementar (`get default() { return cond' ? () => null : () => … }`).
 
 Os filhos restantes formam `default: () => …` (ou `() => null`). Emissão: `children: { [SLOTS]: true, default, n1, n2, … }`. `<Slot>` em qualquer outra posição → `slot-not-direct-child`. `name` não literal → `slot-name-not-literal`. `<Slot>` fora de children de componente → o mesmo erro.
 

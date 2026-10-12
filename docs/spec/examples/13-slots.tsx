@@ -4,7 +4,7 @@ interface Item { id: string; name: string; price: number }
 
 // Slots nomeados, slot padrão, slot com parâmetro e slot condicional. Tudo resolvido em build.
 export function DataTable({ items, children }: { items: Item[]; children: JSX.Element }) {
-  const slots = useSlots<'toolbar' | 'row' | 'empty' | 'footer'>(children)
+  const slots = useSlots<{ toolbar: JSX.Element; row: (item: Item) => JSX.Element; empty: JSX.Element; footer: JSX.Element }>(children)
   let sortBy: keyof Item = 'name'
 
   const sorted = [...items].sort((a, b) => (a[sortBy] > b[sortBy] ? 1 : -1))
