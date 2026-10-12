@@ -81,6 +81,8 @@ export class ModuleContext {
   readonly bodies = new Map<t.Node, BodyContext>()
   /** Thunks criados para JSX fora de corpo reativo (18 §13) → contexto de nomes próprio. */
   readonly thunks = new WeakMap<t.Node, BodyContext>()
+  /** `{expr}` (JSXExpressionContainer) de filho cuja expressão é escalar (D64, 18 §5.1) → `text` em vez de `insert`. */
+  readonly textContainers = new WeakSet<t.Node>()
   /** Sentinelas de two-way (`_twoWay(read, write)`) → kind do `twoWay` (18 §5.5). */
   readonly twoWay = new WeakMap<t.Node, TwoWayKind>()
 

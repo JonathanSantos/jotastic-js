@@ -8,22 +8,47 @@ import type { Analysis, Diagnostic } from '@jotastic/analyzer'
 import { BodyContext, ModuleContext, gid, type CompileOptions } from '../context'
 import { CompileError } from '../errors'
 import { emitDeclarations, finishParams, markTwoWay, rewriteBody, setupRules } from './bindings'
-import { checkBodyFlow, emitBodyFlow } from './flow'
+import { checkBodyFlow, emitBodyFlow, markSelectors } from './flow'
+import { markText } from './scalar'
 import { compileJSX, place, thunk } from './template'
 import { compileUseBody } from './use'
+import { importedName } from './util'
 
 /** APIs de `jotastic` reescritas para helpers do runtime; o import some quando todas as chamadas foram reescritas. */
 const REWRITTEN_APIS = new Set(['watch', 'on', 'external', 'inspect', 'useSlots'])
 
-/** Nomes usados pelo código do usuário (bindings de qualquer escopo + globais referenciados). */
-function collectNames(program: NodePath<t.Program>): Set<string> {
+/**
+ * Nomes que helpers e templates do módulo não podem usar: bindings do módulo, globais referenciados e bindings de
+ * escopos onde o compilador emite código (que contêm JSX, um corpo reativo ou chamada a uma API de `jotastic`). Um
+ * `const text = …` dentro de um handler sem JSX não impede o helper `text` (compiled/02).
+ */
+function collectNames(program: NodePath<t.Program>, bodies: Set<t.Node>): Set<string> {
   const names = new Set<string>(Object.keys(program.scope.bindings))
+  const emitsInto = (p: NodePath): boolean => {
+    if (bodies.has(p.node)) return true
+    let found = false
+    p.traverse({
+      'JSXElement|JSXFragment'(q) {
+        found = true
+        q.stop()
+      },
+      CallExpression(q) {
+        const callee = q.node.callee
+        if (t.isIdentifier(callee) && importedName(q, callee.name)) {
+          found = true
+          q.stop()
+        }
+      },
+    })
+    return found
+  }
   program.traverse({
     Scopable(p) {
-      for (const n of Object.keys(p.scope.bindings)) names.add(n)
+      if (p.isProgram() || !Object.keys(p.scope.bindings).length || p.scope.path !== p) return
+      if (emitsInto(p)) for (const n of Object.keys(p.scope.bindings)) names.add(n)
     },
     Identifier(p) {
-      if (p.isReferencedIdentifier()) names.add(p.node.name)
+      if (p.isReferencedIdentifier() && !p.scope.hasBinding(p.node.name)) names.add(p.node.name)
     },
   })
   return names
@@ -33,6 +58,8 @@ function compileComponentBody(ctx: BodyContext): void {
   checkBodyFlow(ctx)
   setupRules(ctx)
   markTwoWay(ctx)
+  markText(ctx)
+  markSelectors(ctx)
   // `data-jo` no elemento raiz do JSX retornado (18 §14)
   const fn = ctx.fn!.node
   for (const f of ctx.body!.flow) if (f.kind === 'final' && f.node.argument) ctx.dataJo.add(f.node.argument)
@@ -245,7 +272,7 @@ export function transformProgram(program: NodePath<t.Program>, analysis: Analysi
       ? hmrExports(program, new Set(analysis.bodies.filter((b) => b.kind === 'component').map((b) => b.node)))
       : null
 
-  const reserved = collectNames(program)
+  const reserved = collectNames(program, bodyNodes)
   for (const n of exempt) reserved.delete(n)
   const mod = new ModuleContext(program, opts, reserved)
 

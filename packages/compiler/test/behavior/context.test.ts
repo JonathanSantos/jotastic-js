@@ -1,6 +1,6 @@
 // I-3 (18 §4/§6): `<Ctx.Provider value={x}>` passa `value` como getter; o consumidor que lê `useContext(Ctx)` em
-// contexto vivo acompanha o valor (`const t = useContext(Ctx)` depende da classificação do analyzer: hoje `plain`,
-// lido 1×). K-5: `let` comum (ref) passado como prop de componente vira getter.
+// contexto vivo acompanha o valor, direto no JSX ou via `const t = useContext(Ctx)` (o analyzer classifica `memo`).
+// K-5: `let` comum (ref) passado como prop de componente vira getter.
 import { afterEach, expect, test } from 'vitest'
 import { component, signal, type Rendered } from 'jotastic/runtime'
 import { cleanup, render, tick } from '@jotastic/test'
@@ -48,6 +48,46 @@ test('I-3: Provider com valor reativo atualiza o consumidor sem recriá-lo', asy
   await tick()
   expect(container.querySelector('p')).toBe(p)
   expect(p.textContent).toBe('dark')
+  expect(p.className).toBe('dark')
+})
+
+const constSource = `
+import { createContext, useContext } from 'jotastic'
+
+const Theme = createContext('light')
+
+function Label() {
+  const theme = useContext(Theme)
+  const upper = theme.toUpperCase()
+  return <p class={theme}>{upper}</p>
+}
+
+export function App({ dark }: { dark: boolean }) {
+  return (
+    <Theme.Provider value={dark ? 'dark' : 'light'}>
+      <Label />
+    </Theme.Provider>
+  )
+}
+`
+
+test('I-3: `const t = useContext(Ctx)` é reativo via o `const` (memo) e o que deriva dele', async () => {
+  expect(compile(constSource, { filename: 'App.tsx' }).code).toMatch(/const theme = memo\(\(\) => useContext\(Theme\)/)
+  const m = await load<Record<string, Comp>>(constSource, 'App.tsx')
+  const dark = signal(false)
+  const { container } = render(() =>
+    component(m.App!, {
+      get dark() {
+        return dark.get()
+      },
+    }),
+  )
+  const p = container.querySelector('p')!
+  expect(p.textContent).toBe('LIGHT')
+  dark.set(true)
+  await tick()
+  expect(container.querySelector('p')).toBe(p)
+  expect(p.textContent).toBe('DARK')
   expect(p.className).toBe('dark')
 })
 

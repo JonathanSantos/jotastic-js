@@ -89,10 +89,11 @@ export function sliceFunction(source: string, name: string): string {
 }
 
 /**
- * D64 — PARTE DE LISTAS/`text`, pendente: `text(_m, read)` do snapshot → `insert(pai, read, _m)`, com o pai lido da
- * resolução de nós (`const _m = _p.firstChild` → `_p`; `const _m1 = _m0.nextSibling…` → pai de `_m0`).
+ * `text(…)` de filho único do snapshot (`text(_sp.firstChild ?? _sp.appendChild(…), read)` /
+ * `text(_b.appendChild(…), read)`) → `insert(_sp, read, null)` (18 §5.1). `text(_m, read)` com marcador fica.
+ * Sem `singleChildOnly`, o marcador também vira `insert(pai, read, _m)` (pai lido da resolução de nós).
  */
-export function textToInsert(ast: t.File): boolean {
+export function textToInsert(ast: t.File, opts: { singleChildOnly?: boolean } = {}): boolean {
   const inits = new Map<string, t.Expression>()
   traverse(ast, {
     VariableDeclarator(p) {
@@ -110,12 +111,12 @@ export function textToInsert(ast: t.File): boolean {
     return first === 'firstChild' ? e.name : first === 'nextSibling' ? parentOf(e.name) : null
   }
   let changed = false
+  let remaining = 0
   traverse(ast, {
     CallExpression(p) {
       const { callee, arguments: args } = p.node
       if (!t.isIdentifier(callee, { name: 'text' }) || args.length !== 2) return
       const [node, read] = args as [t.Expression, t.Expression]
-      // único filho: `text(_sp.firstChild ?? _sp.appendChild(…), read)` / `text(_b.appendChild(…), read)` → `insert(_sp, read, null)`
       const appended = t.isLogicalExpression(node) ? node.right : node
       if (
         t.isCallExpression(appended) &&
@@ -127,41 +128,54 @@ export function textToInsert(ast: t.File): boolean {
         changed = true
         return
       }
-      if (!t.isIdentifier(node)) return
-      const parent = parentOf(node.name)
-      if (!parent) return
+      const parent = !opts.singleChildOnly && t.isIdentifier(node) ? parentOf(node.name) : null
+      if (!parent) {
+        remaining++
+        return
+      }
       p.replaceWith(t.callExpression(t.identifier('insert'), [t.identifier(parent), read, node]))
       changed = true
     },
   })
-  const imp = ast.program.body[0] as t.ImportDeclaration
-  imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'text')
+  if (!remaining) {
+    const imp = ast.program.body[0] as t.ImportDeclaration
+    imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'text')
+  }
   return changed
 }
 
 /**
- * D58 — PARTE DE LISTAS, pendente: no `render` de cada `list(…)` do snapshot, `item()` → `item` (o compilador ainda
- * passa o item direto). Devolve se mudou algo.
+ * D63 desfeito: `const _selN = selector(() => A)` some e `_selN(B)` volta a `A === B` (`!_selN(B)` → `A !== B`).
+ * Devolve se mudou algo.
  */
-export function lazyItemToValue(ast: t.File): boolean {
-  let changed = false
+export function selectorToEquals(ast: t.File): boolean {
+  const sources = new Map<string, t.Expression>()
   traverse(ast, {
-    CallExpression(p) {
-      if (!t.isIdentifier(p.node.callee, { name: 'list' })) return
-      const render = p.get('arguments')[3]
-      if (!render || !render.isFunction()) return
-      const param = render.node.params[0]
-      if (!t.isIdentifier(param)) return
-      const name = param.name
-      render.traverse({
-        CallExpression(q) {
-          if (t.isIdentifier(q.node.callee, { name }) && !q.node.arguments.length) {
-            q.replaceWith(t.identifier(name))
-            changed = true
-          }
-        },
-      })
+    VariableDeclarator(p) {
+      const init = p.node.init
+      if (!t.isIdentifier(p.node.id) || !t.isCallExpression(init) || !t.isIdentifier(init.callee, { name: 'selector' }))
+        return
+      const fn = init.arguments[0]
+      if (!t.isArrowFunctionExpression(fn) || !t.isExpression(fn.body)) return
+      sources.set(p.node.id.name, fn.body)
+      p.parentPath.remove()
     },
   })
-  return changed
+  if (!sources.size) return false
+  traverse(ast, {
+    UnaryExpression(p) {
+      const arg = p.node.argument
+      if (p.node.operator !== '!' || !t.isCallExpression(arg) || !t.isIdentifier(arg.callee)) return
+      const a = sources.get(arg.callee.name)
+      if (a) p.replaceWith(t.binaryExpression('!==', t.cloneNode(a, true), arg.arguments[0] as t.Expression))
+    },
+    CallExpression(p) {
+      const callee = p.node.callee
+      const a = t.isIdentifier(callee) ? sources.get(callee.name) : undefined
+      if (a) p.replaceWith(t.binaryExpression('===', t.cloneNode(a, true), p.node.arguments[0] as t.Expression))
+    },
+  })
+  const imp = ast.program.body[0] as t.ImportDeclaration
+  imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'selector')
+  return true
 }

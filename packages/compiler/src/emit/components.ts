@@ -6,7 +6,7 @@ import * as t from '@babel/types'
 import type { NodePath } from '@babel/traverse'
 import { isGenerated, type BodyContext } from '../context'
 import { childrenOf, type Child } from './template'
-import { childValue } from './flow'
+import { childValue, isAnchoredList } from './flow'
 import {
   arrow,
   attrName,
@@ -293,6 +293,8 @@ function childrenEntryOf(path: NodePath<t.JSXElement>, ctx: BodyContext): t.Obje
       // K-14: condicional com JSX → `get children() { return branches(…) }` (o mesmo valor de um filho de elemento)
       const v = childValue(c.path, ctx)
       if (t.isCallExpression(v) && isGenerated(v.callee)) return getter('children', v)
+      // lista (D64): a função da âncora é o valor (accessor que cria a lista quando quem recebe renderiza)
+      if (isAnchoredList(v)) return t.objectProperty(t.identifier('children'), v)
       return propEntry('children', e, c.path.scope)
     }
     return getter('children', c.path.node)

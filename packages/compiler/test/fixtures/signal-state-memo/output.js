@@ -1,4 +1,4 @@
-import { template, signal, state, memo, listen, insert } from 'jotastic/runtime'
+import { template, signal, state, memo, listen, text, insert } from 'jotastic/runtime'
 const _t0 = template('<p data-jo="input.tsx:33"><!> <!> <!> <!> <!> <!></p>')
 export function Rewrites() {
   const count = signal(0, {
@@ -65,9 +65,9 @@ export function Rewrites() {
   const _m4 = _m3.nextSibling.nextSibling
   const _m5 = _m4.nextSibling.nextSibling
   listen(_el, 'click', mutate)
-  insert(_el, () => count.get(), _m0)
-  insert(_el, () => total.get(), _m1)
-  insert(_el, () => label.get(), _m2)
+  text(_m0, () => count.get())
+  text(_m1, () => total.get())
+  text(_m2, () => label.get())
   insert(_el, () => user.get()?.name, _m3)
   insert(_el, () => a.get(), _m4)
   insert(_el, () => b.get(), _m5)

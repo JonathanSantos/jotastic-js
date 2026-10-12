@@ -35,9 +35,7 @@ function mountPage(initialAdmin: boolean) {
   return { admin, container, card }
 }
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Card: slot nomeado (header), default, slot com parâmetro (row) e footer ausente', () => {
+test('Card: slot nomeado (header), default, slot com parâmetro (row) e footer ausente', () => {
   const { card } = mountPage(false)
   expect(card.querySelector('header')!.innerHTML).toBe('<h2>Título</h2>')
   expect(card.querySelector('.body')!.innerHTML).toBe('<p>Corpo do card</p>')

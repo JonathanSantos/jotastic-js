@@ -1,4 +1,4 @@
-import { template, signal, branches, insert, listen, component } from 'jotastic/runtime'
+import { template, signal, branches, insert, text, listen, component } from 'jotastic/runtime'
 const _t0 = template('<div data-jo="input.tsx:5"><!><!><!><!><!><!><!><!><button>alternar</button></div>')
 const _t1 = template('<p>aberto</p>')
 const _t2 = template('<b></b>')
@@ -120,7 +120,7 @@ export function Status(props) {
     ]),
     _m5,
   )
-  insert(_el, () => (props.n === 1 ? 'item' : 'itens'), _m6)
+  text(_m6, () => (props.n === 1 ? 'item' : 'itens'))
   insert(
     _el,
     branches([

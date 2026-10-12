@@ -108,6 +108,9 @@ export function classifyBody(scope: BodyScope, flow: FlowResult): Classification
     if (isListExpression(u)) return 'list'
     if (t.isCallExpression(u) && t.isIdentifier(u.callee) && importedName(d.declarator, u.callee.name) === 'external')
       return 'external'
+    // I-3: `useContext(Ctx)` lê o memo do Provider → o `const` que o recebe é derivado (reativo), não `useResult`
+    if (t.isCallExpression(u) && t.isIdentifier(u.callee) && importedName(d.declarator, u.callee.name) === 'useContext')
+      return 'memo'
     if (isUseCall(u)) return 'useResult'
     if (t.isIdentifier(d.declarator.node.id) && (t.isObjectExpression(u) || t.isArrayExpression(u))) {
       if (t.isObjectExpression(u) && hasGetter(u)) return 'memoLiteral'

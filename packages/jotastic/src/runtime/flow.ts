@@ -371,6 +371,13 @@ export function list<T>(
     },
     { kind: 'render', name: dev?.name, loc: dev?.loc },
   )
+  // Sem pai fixo (D64): quem inseriu a âncora (o `insert` do pai, via fragmento) só conhece os nós do momento da
+  // inserção; no dispose a lista tira as próprias linhas que ainda estão no DOM, inclusive as criadas depois.
+  if (parent0 === null && listOwner)
+    onCleanup(() => {
+      for (const r of rows) for (const n of rowNodes(r as Row<unknown>)) n.parentNode?.removeChild(n)
+      rows = []
+    })
 }
 
 // ─── children / slots ────────────────────────────────────────────────────────

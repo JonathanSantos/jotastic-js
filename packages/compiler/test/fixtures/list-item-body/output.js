@@ -14,7 +14,7 @@ export function Accordion(props) {
         name: 'open',
         loc: 'input.tsx:6:13',
       })
-      const title = memo(() => `${i() + 1}. ${item.title}`, {
+      const title = memo(() => `${i() + 1}. ${item().title}`, {
         name: 'title',
         loc: 'input.tsx:7:15',
       })
@@ -32,7 +32,7 @@ export function Accordion(props) {
             () => !!open.get(),
             () => {
               const _el3 = _t2()
-              insert(_el3, () => item.body, null)
+              insert(_el3, () => item().body, null)
               return _el3
             },
           ],

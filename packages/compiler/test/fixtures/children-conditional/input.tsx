@@ -1,4 +1,4 @@
-// K-14: filho único condicional de componente → `get children() { return branches(…) }`; K-11 (lista) segue accessor
+// K-14: filho único condicional de componente → `get children() { return branches(…) }`; K-11/D64 (lista) → âncora + `list(null, …)`
 import { Card } from './card'
 
 export function A({ x, items }: { x: number; items: string[] }) {

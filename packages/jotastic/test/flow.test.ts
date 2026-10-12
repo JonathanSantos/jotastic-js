@@ -1087,4 +1087,30 @@ describe('list: item lazy (D58), selector (D63), pai do marker (D64)', () => {
     flush()
     expect(Array.from(div.childNodes)).toEqual([head, marker, tail])
   })
+
+  test('F18 list(null, marker): dispose do owner tira as linhas, inclusive as criadas depois da inserção', () => {
+    const items = state(['a'])
+    const frag = document.createDocumentFragment()
+    const marker = frag.appendChild(document.createComment(''))
+    const root = inRoot((r) => {
+      list(
+        null,
+        marker,
+        () => items.get(),
+        (item) => {
+          const el = li()
+          el.textContent = item()
+          return el
+        },
+      )
+      return r
+    })
+    const div = document.createElement('div')
+    div.appendChild(frag)
+    items.get().push('b') // linha que o `insert` do pai não conhece
+    flush()
+    expect(div.textContent).toBe('ab')
+    dispose(root)
+    expect(div.querySelectorAll('li')).toHaveLength(0)
+  })
 })

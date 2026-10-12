@@ -5,7 +5,7 @@ import { describe, test } from 'vitest'
 import * as t from '@babel/types'
 import { compile } from '../src/index'
 import { spec } from './helpers'
-import { compareSnapshot, lazyItemToValue, replaceStrings, textToInsert, traverse, type AllowEntry } from './snapshot'
+import { compareSnapshot, replaceStrings, selectorToEquals, textToInsert, traverse, type AllowEntry } from './snapshot'
 
 const dataJo: AllowEntry = {
   ref: '18 §14 (dev: `data-jo` no elemento raiz do template de cada componente)',
@@ -55,16 +55,16 @@ const ALLOW_02: AllowEntry[] = [
   dataJo,
   staticTemplateArrow,
   {
-    ref: 'D58 (item de lista lazy) — PARTE DE LISTAS, pendente',
-    why: 'compiled/02 lê o item como `todo()`/`f()`; o compilador ainda passa o item direto. Remover quando D58 entrar',
+    ref: '18 §5.1 (conteúdo único → `insert(el, read, null)`; `text` só com marcador) × compiled/02',
+    why: 'compiled/02 emite `text(_sp.firstChild ?? _sp.appendChild(…), () => todo().text)` e `text(_b.appendChild(…), () => f())` para filho único; 18 §5.1 e compiled/01 (`<h2>{label}</h2>` → `insert`) mantêm `insert(el, read, null)`, e nem `todo.text` nem `f` (item) passam no critério de escalar de §5.1. Lacuna reportada',
     side: 'expected',
-    apply: (ast) => lazyItemToValue(ast),
+    apply: (ast) => textToInsert(ast, { singleChildOnly: true }),
   },
   {
-    ref: 'D64 (`text(marker, read)` para escalares) — PARTE DE LISTAS/`text`, pendente',
-    why: 'compiled/02 emite `text(…)`; o compilador ainda emite `insert`. Remover quando D64 entrar',
-    side: 'expected',
-    apply: (ast) => textToInsert(ast),
+    ref: 'D63 (`selector` na linha da lista) × compiled/02',
+    why: 'compiled/02 foi atualizado com D58/D59/D60/D64, não com D63: `filter === f` na linha do filtro continua `===`; o compilador emite `const _sel0 = selector(() => filter.get())` e `_sel0(f())`',
+    side: 'actual',
+    apply: (ast) => selectorToEquals(ast),
   },
   {
     ref: 'loc 1-based (A-7) medido no exemplo',

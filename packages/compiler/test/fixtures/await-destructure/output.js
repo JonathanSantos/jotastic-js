@@ -1,4 +1,4 @@
-import { template, resource, continuation, insert } from 'jotastic/runtime'
+import { template, resource, continuation, insert, text } from 'jotastic/runtime'
 // 18 §10.4–§10.5: `await` sem declarador (só espera) e `const [a, b] = await Promise.all(…)` → um recurso
 import { api } from './api'
 const _t0 = template('<p data-jo="input.tsx:8"><!>: <!></p>')
@@ -16,7 +16,7 @@ export function Dash() {
       const _m0 = _el.firstChild
       const _m1 = _m0.nextSibling.nextSibling
       insert(_el, () => _r1.value.get()[0].name, _m0)
-      insert(_el, () => (_r1.value.get()[1].tags ?? []).length, _m1)
+      text(_m1, () => (_r1.value.get()[1].tags ?? []).length)
       return _el
     })
   })

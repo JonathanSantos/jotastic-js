@@ -9,7 +9,6 @@ import _traverse from '@babel/traverse'
 import * as t from '@babel/types'
 import { compile } from '../src/index'
 import { pretty, spec } from './helpers'
-import { textToInsert } from './snapshot'
 
 const traverse: typeof _traverse = (_traverse as unknown as { default?: typeof _traverse }).default ?? _traverse
 const generate: typeof _generate = (_generate as unknown as { default?: typeof _generate }).default ?? _generate
@@ -46,12 +45,6 @@ const ALLOWLIST: Record<string, AllowEntry[]> = {
         })
         return changed
       },
-    },
-    {
-      ref: 'D64 (`text(marker, read)` para escalares) — PARTE DE LISTAS/`text`, pendente',
-      why: 'compiled/01 emite `text(_m0, …)`; o compilador ainda emite `insert(_p, …, _m0)`. Remover quando D64 entrar',
-      side: 'expected',
-      apply: (ast) => textToInsert(ast),
     },
   ],
 }

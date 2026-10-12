@@ -87,7 +87,7 @@ export function Page(props) {
                         () => _r1.value.get(),
                         (p) => {
                           const _el4 = _t3()
-                          insert(_el4, () => p.title, null)
+                          insert(_el4, () => p().title, null)
                           return _el4
                         },
                         (p) => p.id,

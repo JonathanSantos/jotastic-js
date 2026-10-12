@@ -18,6 +18,7 @@
  * a ordem do código é respeitada (§10.9): `if` depois de `await` fica dentro da continuação dele, e vice-versa.
  */
 import * as t from '@babel/types'
+import _generate from '@babel/generator'
 import type { NodePath } from '@babel/traverse'
 import { isProbablyPrimitive } from '@jotastic/analyzer'
 import { gid, isGenerated, type BodyContext, type Rule } from '../context'
@@ -49,10 +50,15 @@ function isIndexedObject(n: t.Node): n is t.MemberExpression & { object: t.Objec
   return t.isMemberExpression(n) && n.computed && t.isObjectExpression(n.object) && hasJSX(n.object)
 }
 
-/** Condicional em posição de filho que vira `branches` (18 §7; K-4: só quando há JSX). */
+/** JSX ou lista (`xs.map(x => <li/>)`, cujo JSX está dentro do callback). */
+function hasJSXOrList(n: t.Node): boolean {
+  return hasJSX(n) || isListExpression(n)
+}
+
+/** Condicional em posição de filho que vira `branches` (18 §7; K-4: só quando há JSX, ou uma lista: D64). */
 function isConditionalChild(expr: t.Node): boolean {
-  if (t.isConditionalExpression(expr)) return hasJSX(expr.consequent) || hasJSX(expr.alternate)
-  if (t.isLogicalExpression(expr)) return hasJSX(expr.right)
+  if (t.isConditionalExpression(expr)) return hasJSXOrList(expr.consequent) || hasJSXOrList(expr.alternate)
+  if (t.isLogicalExpression(expr)) return hasJSXOrList(expr.right)
   return isIndexedObject(expr)
 }
 
@@ -65,6 +71,9 @@ export function isFlowChild(expr: t.Node): boolean {
 
 /** Funções de render de casos, itens de lista e continuações (o JSX dentro delas está "em fluxo"). */
 const flowFns = new WeakSet<t.Node>()
+
+/** `@babel/generator` é CJS: o default pode vir embrulhado conforme o loader. */
+const generate: typeof _generate = (_generate as unknown as { default?: typeof _generate }).default ?? _generate
 
 interface FlowState {
   /** Statements do escopo raiz que são pontos de decisão (§9). */
@@ -107,8 +116,24 @@ function stateOf(ctx: BodyContext): FlowState {
   return s
 }
 
-/** Callees `i` gerados pela regra do índice (`i` → `i()`); a função de `key` recebe o número e os desfaz. */
-const indexCallees = new WeakSet<t.Node>()
+/**
+ * Callees gerados pelas regras do índice (`i` → `i()`) e do item (`item` → `item()`, D58); a função de `key` recebe os
+ * valores (`key(item, i)`) e os desfaz.
+ */
+const lazyCallees = new WeakSet<t.Node>()
+
+/** `x` → `x()` com o callee marcado (desfeito na `key`). */
+function lazyRead(name: string): t.CallExpression {
+  const callee = gid(name)
+  lazyCallees.add(callee)
+  return t.callExpression(callee, [])
+}
+
+/** Item desestruturado (`({ name }) => …`): callback → nome do parâmetro gerado que substitui o padrão (D58). */
+const itemParams = new WeakMap<t.Function, string>()
+
+/** Sentinelas de seleção (D63): `_select(A, B)` no lugar de `A === B` → callback da lista e negação (`!==`). */
+const selections = new WeakMap<t.Node, { cb: t.Function; negate: boolean }>()
 
 /** O JSX em `path` está dentro de uma função de render de fluxo (antes de chegar ao corpo reativo)? */
 export function isInFlow(path: NodePath, ctx: BodyContext): boolean {
@@ -153,6 +178,23 @@ function isElementChild(p: NodePath): boolean {
   return !!parent?.isJSXElement() && isIntrinsic(parent.node.openingElement.name)
 }
 
+/**
+ * Posição de filho para uma lista (18 §8, D64): `{…}` em children de elemento, componente ou fragmento, inclusive
+ * como lado de um condicional (`{a && xs.map(…)}`, `{a ? xs.map(…) : <p/>}`). Fora de elemento intrínseco a lista
+ * não tem pai fixo: âncora + `list(null, marker, …)`.
+ */
+function isChildPosition(p: NodePath): boolean {
+  let cur = p
+  for (;;) {
+    const parent = cur.parentPath
+    if (!parent) return false
+    if (parent.isJSXExpressionContainer()) return parent.listKey === 'children'
+    if (parent.isConditionalExpression() && cur.key !== 'test') cur = parent
+    else if (parent.isLogicalExpression() && cur.key === 'right') cur = parent
+    else return false
+  }
+}
+
 /** Leitura em contexto vivo do item: dentro de `{…}`/atributo do JSX, sem função entre ela e o callback. */
 function isLiveInItem(ref: NodePath, cb: t.Function): boolean {
   let inJSX = false
@@ -193,6 +235,37 @@ function signalRule(name: string, writable: boolean): Rule {
 }
 
 /**
+ * Item lazy (D58, 18 §4): `item` → `item()`; `item.x = v` → `item().x = v` (o membro sobre a leitura reescrita);
+ * `({ name }) =>` → parâmetro gerado `item` e `name` → `item().name` (escrita: `item().name = v`). O padrão só é trocado
+ * pelo identificador em `emitBodyFlow` (a reescrita ainda resolve as folhas pelos bindings do padrão).
+ */
+function registerItemParam(ctx: BodyContext, cbPath: NodePath<t.Function>): void {
+  const cb = cbPath.node
+  const param = cb.params[0]
+  if (!param) return
+  if (t.isIdentifier(param)) {
+    const b = cbPath.scope.getBinding(param.name)
+    const name = param.name
+    if (b) ctx.rules.set(b.identifier, { read: () => lazyRead(name) })
+    return
+  }
+  if (t.isRestElement(param)) return ctx.mod.notImplemented(param, 'item de lista como rest (`...args`)')
+  const name = ctx.name('item')
+  itemParams.set(cb, name)
+  const out: Leaf[] = []
+  leaves(ctx, param, () => lazyRead(name), out)
+  for (const leaf of out) {
+    const b = cbPath.scope.getBinding(leaf.id.name)
+    if (!b) continue
+    const target = (): t.Expression => {
+      const e = leaf.access()
+      return t.isLogicalExpression(e) ? e.left : e
+    }
+    ctx.rules.set(b.identifier, { read: leaf.access, target })
+  }
+}
+
+/**
  * Callback de lista (§8): índice → `i()`, mini-corpo reativo (`let` lido no JSX do item → signal/state; `const`
  * derivado → memo). Marca o callback como função de fluxo.
  */
@@ -210,15 +283,10 @@ function registerListCallback(ctx: BodyContext, call: NodePath<t.CallExpression 
     const b = cbPath.scope.getBinding(index.name)
     if (b) {
       const name = index.name
-      ctx.rules.set(b.identifier, {
-        read: () => {
-          const callee = gid(name)
-          indexCallees.add(callee)
-          return t.callExpression(callee, [])
-        },
-      })
+      ctx.rules.set(b.identifier, { read: () => lazyRead(name) })
     }
   }
+  registerItemParam(ctx, cbPath)
   // mini-corpo do item (só declarações do bloco raiz do callback)
   const body = cbPath.get('body')
   if (!body.isBlockStatement()) return
@@ -384,7 +452,7 @@ export function checkBodyFlow(ctx: BodyContext): void {
       if (!isListExpression(call.node)) return
       const parent = call.parentPath
       const isConst = parent.isVariableDeclarator() && st.listConsts.has(parent.node)
-      if (isConst || isElementChild(call)) registerListCallback(ctx, call)
+      if (isConst || isChildPosition(call)) registerListCallback(ctx, call)
     },
   })
   for (const [d, name] of st.listConsts) {
@@ -399,11 +467,88 @@ export function checkBodyFlow(ctx: BodyContext): void {
   }
 }
 
+/** Kind (`signal`/`state`/`memo`) de uma declaração do mini-corpo de um item, ou `undefined`. */
+export function itemDeclKind(ctx: BodyContext, d: t.Node): 'signal' | 'state' | 'memo' | undefined {
+  return stateOf(ctx).itemDecls.get(d as t.VariableDeclarator)
+}
+
+/**
+ * Seleção (D63, 18 §8), antes da reescrita e depois das regras: dentro do render de uma lista, `A === B` /
+ * `A !== B` / `Object.is(A, B)` em contexto vivo (JSX da linha ou `const` derivado do item), com um lado lendo só
+ * bindings reativos de fora da linha e o outro lendo o item → sentinela `_select(A, B)`; `emitSelectors` a troca por
+ * `_selN(B)` e emite `const _selN = selector(() => A)` antes do `list`.
+ */
+export function markSelectors(ctx: BodyContext): void {
+  const st = stateOf(ctx)
+  if (!st.listCallbacks.size) return
+  const live = (p: NodePath, cb: t.Function): boolean => {
+    for (let q: NodePath | null = p.parentPath; q && q.node !== cb; q = q.parentPath) {
+      if (q.isFunction()) return false
+      if (q.isJSXExpressionContainer() || q.isJSXSpreadAttribute()) return true
+      if (q.isVariableDeclarator() && q.parentPath.parentPath?.node === cb.body)
+        return st.itemDecls.get(q.node) === 'memo'
+    }
+    return false
+  }
+  const side = (s: NodePath, cbPath: NodePath, items: Set<t.Node>): 'outer' | 'item' | null => {
+    let item = false
+    let inner = false
+    let reactive = false
+    const check = (id: NodePath<t.Identifier>) => {
+      const b = id.scope.getBinding(id.node.name)
+      if (!b || b.path === s || b.path.isDescendant(s)) return
+      if (b.scope.path === cbPath || b.scope.path.isDescendant(cbPath)) {
+        inner = true
+        if (items.has(b.identifier)) item = true
+      } else if (ctx.rules.has(b.identifier) || ctx.propBindings.has(b.identifier)) reactive = true
+    }
+    if (s.isIdentifier()) check(s)
+    else
+      s.traverse({
+        Identifier(q) {
+          if (q.isReferencedIdentifier()) check(q)
+        },
+      })
+    return item ? 'item' : !inner && reactive ? 'outer' : null
+  }
+  const mark = (p: NodePath, a: NodePath, b: NodePath, negate: boolean) => {
+    const fn = p.getFunctionParent()
+    const cb = fn?.node
+    if (!fn || !cb || !st.listCallbacks.has(cb) || !cb.params[0] || !live(p, cb)) return
+    const items = new Set<t.Node>(Object.values(t.getBindingIdentifiers(cb.params[0])))
+    const sa = side(a, fn, items)
+    const sb = side(b, fn, items)
+    let pair: [t.Expression, t.Expression] | null = null
+    if (sa === 'outer' && sb === 'item') pair = [a.node as t.Expression, b.node as t.Expression]
+    else if (sa === 'item' && sb === 'outer') pair = [b.node as t.Expression, a.node as t.Expression]
+    if (!pair) return
+    const sentinel = t.callExpression(gid('_select'), pair)
+    selections.set(sentinel, { cb, negate })
+    p.replaceWith(sentinel)
+  }
+  ctx.fn!.traverse({
+    BinaryExpression(p) {
+      const op = p.node.operator
+      if (op !== '===' && op !== '!==') return
+      mark(p, p.get('left'), p.get('right'), op === '!==')
+    },
+    CallExpression(p) {
+      const { callee, arguments: args } = p.node
+      if (args.length !== 2 || args.some((a) => !t.isExpression(a))) return
+      if (!t.isMemberExpression(callee) || callee.computed || !t.isIdentifier(callee.property, { name: 'is' })) return
+      if (!t.isIdentifier(callee.object, { name: 'Object' }) || p.scope.getBinding('Object')) return
+      const [a, b] = p.get('arguments')
+      mark(p, a!, b!, false)
+    },
+  })
+}
+
 // ─── Fase 2: depois da reescrita ─────────────────────────────────────────────
 
 /** Condição já booleana (`!x`, comparação…) não ganha `!!` (como em compiled/02 e /04). */
 function isBooleanish(e: t.Expression): boolean {
   if (t.isBooleanLiteral(e)) return true
+  if (selections.has(e)) return true
   if (t.isUnaryExpression(e)) return e.operator === '!'
   if (t.isBinaryExpression(e))
     return ['==', '!=', '===', '!==', '<', '<=', '>', '>=', 'instanceof', 'in'].includes(e.operator)
@@ -441,19 +586,21 @@ function branchesCall(ctx: BodyContext, cases: Case[], fallback: t.Expression | 
 }
 
 /** `cond ? X : Y`, `a && X`, `a || X`, `a ?? X`, `{…}[s]` → casos + fallback (§7). */
-function conditionalCases(e: t.Expression): { cases: Case[]; fallback: t.Expression | null } {
+function conditionalCases(ctx: BodyContext, e: t.Expression): { cases: Case[]; fallback: t.Expression | null } {
+  // lado que é uma lista registrada (D64): a função de render é a da âncora
+  const side = (x: t.Expression) => (isRegisteredList(ctx, x) ? anchoredList(ctx, x) : flowArrow(renderValue(x)))
   if (t.isConditionalExpression(e)) {
-    const head: Case = [cond(e.test), flowArrow(renderValue(e.consequent))]
+    const head: Case = [cond(e.test), side(e.consequent)]
     const alt = e.alternate
     if (isConditionalChild(alt) && !isIndexedObject(alt)) {
-      const rest = conditionalCases(alt)
+      const rest = conditionalCases(ctx, alt)
       return { cases: [head, ...rest.cases], fallback: rest.fallback }
     }
     const none = t.isNullLiteral(alt) || t.isIdentifier(alt, { name: 'undefined' }) || t.isBooleanLiteral(alt)
-    return { cases: [head], fallback: none ? null : flowArrow(renderValue(alt)) }
+    return { cases: [head], fallback: none ? null : side(alt) }
   }
   if (t.isLogicalExpression(e)) {
-    const right = flowArrow(renderValue(e.right))
+    const right = side(e.right)
     if (e.operator === '&&') return { cases: [[cond(e.left), right]], fallback: null }
     const left = e.left
     const test =
@@ -477,9 +624,9 @@ function literalKey(k: t.Node): string | number {
 }
 
 /**
- * Valor de um `{expr}` em posição de filho: condicional com JSX → `branches(...)`; resto → accessor `() => expr`
- * (função como está). Listas em filho de elemento não passam por aqui (`listStatement`); fora disso (fragmento,
- * children de componente, dentro de condicional) a lista é um accessor comum: recria tudo quando a fonte muda.
+ * Valor de um `{expr}` em posição de filho: condicional com JSX → `branches(...)`; lista → âncora (`anchoredList`);
+ * resto → accessor `() => expr` (função como está). Listas em filho de elemento não passam por aqui
+ * (`listStatement`).
  */
 export function childValue(path: NodePath<t.Expression>, ctx: BodyContext): t.Expression {
   const expr = path.node
@@ -490,9 +637,11 @@ export function childValue(path: NodePath<t.Expression>, ctx: BodyContext): t.Ex
           ctx.mod.notImplemented(p, 'objeto de JSX indexado com chave computada, método ou spread')
       }
     }
-    const { cases, fallback } = conditionalCases(expr)
+    const { cases, fallback } = conditionalCases(ctx, expr)
     return branchesCall(ctx, cases, fallback)
   }
+  // lista fora de filho de elemento (fragmento, children de componente): âncora + `list(null, marker, …)` (D64)
+  if (isRegisteredList(ctx, expr)) return anchoredList(ctx, expr)
   if (isListConstRef(expr, ctx))
     return ctx.mod.notImplemented(expr, '`const` de lista fora de posição de filho de elemento')
   if (t.isFunction(expr)) return expr
@@ -507,11 +656,51 @@ function isListConstRef(expr: t.Node, ctx: BodyContext): expr is t.Identifier {
 
 /** O `{expr}` deste filho de elemento vira `list(...)`/`_rows(...)` (statement, não valor de `insert`)? */
 export function isListChild(path: NodePath<t.Expression>, ctx: BodyContext): boolean {
-  const n = path.node
-  if (isListConstRef(n, ctx)) return true
+  return isListConstRef(path.node, ctx) || isRegisteredList(ctx, path.node)
+}
+
+/** Cadeia `….map(cb)` cujo callback foi registrado como lista (§8). */
+function isRegisteredList(ctx: BodyContext, n: t.Node): n is t.CallExpression | t.OptionalCallExpression {
   if (!isListExpression(n)) return false
   const cb = n.arguments[0]
   return !!cb && stateOf(ctx).listCallbacks.has(cb as t.Function)
+}
+
+/** Funções de âncora geradas para listas sem pai fixo (o valor já é a função de render, não vira accessor). */
+const anchors = new WeakSet<t.Node>()
+
+export function isAnchoredList(n: t.Node): boolean {
+  return anchors.has(n)
+}
+
+/**
+ * Lista sem elemento pai fixo (children de componente, fragmento, condicional; D64): a âncora `<!>` vive num
+ * fragmento que o `insert` do pai leva para o lugar; `list(null, marker, …)` lê `marker.parentNode` a cada
+ * reconciliação. `() => { const _f = …; const _m = _f.appendChild(<!>); list(null, _m, …); return _f }`.
+ */
+function anchoredList(ctx: BodyContext, call: t.CallExpression | t.OptionalCallExpression): t.ArrowFunctionExpression {
+  const frag = ctx.name('_f', true)
+  const marker = ctx.name('_m', true)
+  const doc = t.identifier('document')
+  const { pre, args } = listArgs(ctx, call, undefined, call)
+  const fn = flowArrow(
+    t.blockStatement([
+      t.variableDeclaration('const', [t.variableDeclarator(gid(frag), callMethod(doc, 'createDocumentFragment'))]),
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          gid(marker),
+          callMethod(gid(frag), 'appendChild', [
+            callMethod(t.identifier('document'), 'createComment', [t.stringLiteral('')]),
+          ]),
+        ),
+      ]),
+      ...pre,
+      t.expressionStatement(ctx.mod.call('list', [t.nullLiteral(), gid(marker), ...args])),
+      t.returnStatement(gid(frag)),
+    ]),
+  )
+  anchors.add(fn)
+  return fn
 }
 
 /** Expressões raiz devolvidas pelo callback (corpo-expressão ou `return`s fora de funções aninhadas). */
@@ -525,10 +714,10 @@ function returnedRoots(cb: t.Function): t.Expression[] {
   return out
 }
 
-/** Desfaz `i()` → `i` (a função de `key` recebe o índice numérico). */
-function unwrapIndex(e: t.Expression): t.Expression {
+/** Desfaz `i()` → `i` e `item()` → `item` (a função de `key` recebe o item e o índice como valores). */
+function unwrapLazy(e: t.Expression): t.Expression {
   const visit = (n: t.Node): t.Node => {
-    if (t.isCallExpression(n) && n.arguments.length === 0 && indexCallees.has(n.callee)) return n.callee
+    if (t.isCallExpression(n) && n.arguments.length === 0 && lazyCallees.has(n.callee)) return n.callee
     for (const key of t.VISITOR_KEYS[n.type] ?? []) {
       const child = (n as unknown as Record<string, unknown>)[key]
       if (Array.isArray(child))
@@ -559,36 +748,83 @@ function extractKey(cb: t.Function): t.ArrowFunctionExpression | null {
       key = a.value.expression
   }
   if (!key) return null
-  const params = cb.params.map((p) => t.cloneNode(p, true)) as t.Identifier[]
-  return arrow(unwrapIndex(key), params)
+  const item = itemParams.get(cb)
+  const params = cb.params.map((p, i) => (i === 0 && item ? gid(item) : t.cloneNode(p, true))) as t.Identifier[]
+  return arrow(unwrapLazy(key), params)
 }
 
-/** Argumentos de `list` depois de `parent, marker`: `() => SRC`, render, key?, dev?. */
+/**
+ * Seleções da linha (D63): cada sentinela `_select(A, B)` deste callback vira `_selN(B)` (`!_selN(B)` para `!==`) e
+ * `const _selN = selector(() => A)` sai antes do `list`. O mesmo `A` (mesmo código) reaproveita o seletor.
+ */
+function emitSelectors(ctx: BodyContext, cb: t.Function): t.Statement[] {
+  const pre: t.Statement[] = []
+  const byCode = new Map<string, string>()
+  const visit = (n: t.Node): t.Node => {
+    const sel = t.isCallExpression(n) ? selections.get(n) : undefined
+    if (sel && sel.cb === cb) {
+      const [a, b] = (n as t.CallExpression).arguments as [t.Expression, t.Expression]
+      const code = generate(a, { comments: false, compact: true }).code
+      let name = byCode.get(code)
+      if (!name) {
+        name = ctx.name('_sel', true)
+        byCode.set(code, name)
+        pre.push(
+          t.variableDeclaration('const', [t.variableDeclarator(gid(name), ctx.mod.call('selector', [arrow(a)]))]),
+        )
+      }
+      const test = t.callExpression(gid(name), [visit(b) as t.Expression])
+      selections.set(test, sel)
+      return sel.negate ? t.unaryExpression('!', test) : test
+    }
+    for (const key of t.VISITOR_KEYS[n.type] ?? []) {
+      const child = (n as unknown as Record<string, unknown>)[key]
+      if (Array.isArray(child))
+        child.forEach((c, i) => {
+          if (c && typeof c === 'object' && 'type' in c) child[i] = visit(c as t.Node)
+        })
+      else if (child && typeof child === 'object' && 'type' in child)
+        (n as unknown as Record<string, unknown>)[key] = visit(child as t.Node)
+    }
+    return n
+  }
+  visit(cb.body)
+  return pre
+}
+
+/** Argumentos de `list` depois de `parent, marker` (`() => SRC`, render, key?, dev?) e os seletores (D63) antes dele. */
 function listArgs(
   ctx: BodyContext,
   call: t.CallExpression | t.OptionalCallExpression,
   name: string | undefined,
   locNode: t.Node,
-): t.Expression[] {
+): { pre: t.Statement[]; args: t.Expression[] } {
   const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression
   let source = callee.object
   if (t.isOptionalMemberExpression(callee) || t.isOptionalCallExpression(call))
     source = t.logicalExpression('??', source, t.arrayExpression([]))
   const cb = call.arguments[0] as t.ArrowFunctionExpression | t.FunctionExpression
+  const pre = emitSelectors(ctx, cb)
   const key = extractKey(cb)
   const meta = ctx.mod.meta(name, locNode)
   const args: t.Expression[] = [arrow(source), cb]
   if (key || meta) args.push(key ?? t.identifier('undefined'))
   if (meta) args.push(meta)
-  return args
+  return { pre, args }
 }
 
 /** `{xs.map(…)}` / `{rows}` em filho de elemento → `list(parent, marker, …)` / `_rows(parent, marker)`. */
-export function listStatement(ctx: BodyContext, expr: t.Expression, parent: string, marker: string | null) {
+export function listStatement(
+  ctx: BodyContext,
+  expr: t.Expression,
+  parent: string,
+  marker: string | null,
+): t.Statement[] {
   const m = marker ? gid(marker) : t.nullLiteral()
-  if (isListConstRef(expr, ctx)) return t.expressionStatement(t.callExpression(gid(expr.name), [gid(parent), m]))
+  if (isListConstRef(expr, ctx)) return [t.expressionStatement(t.callExpression(gid(expr.name), [gid(parent), m]))]
   const call = expr as t.CallExpression
-  return t.expressionStatement(ctx.mod.call('list', [gid(parent), m, ...listArgs(ctx, call, undefined, call)]))
+  const { pre, args } = listArgs(ctx, call, undefined, call)
+  return [...pre, t.expressionStatement(ctx.mod.call('list', [gid(parent), m, ...args]))]
 }
 
 /** `const rows = xs.map(…)` → `const _rows = (parent, marker) => list(parent, marker, …)` (18 §8). */
@@ -598,7 +834,9 @@ export function emitListConst(ctx: BodyContext, d: t.VariableDeclarator): t.Stat
   const parent = ctx.name('parent')
   const marker = ctx.name('marker')
   const id = d.id as t.Identifier
-  const body = ctx.mod.call('list', [gid(parent), gid(marker), ...listArgs(ctx, d.init, id.name, id)])
+  const { pre, args } = listArgs(ctx, d.init, id.name, id)
+  const call = ctx.mod.call('list', [gid(parent), gid(marker), ...args])
+  const body = pre.length ? t.blockStatement([...pre, t.expressionStatement(call)]) : call
   return [t.variableDeclaration('const', [t.variableDeclarator(gid(name), arrow(body, [gid(parent), gid(marker)]))])]
 }
 
@@ -757,6 +995,15 @@ function continuationOf(ctx: BodyContext, stmts: t.Statement[]): t.Expression | 
 export function emitBodyFlow(ctx: BodyContext): void {
   const st = stateOf(ctx)
   emitItemDecls(ctx)
+  // item desestruturado (D58): o padrão vira o parâmetro gerado (as folhas já foram reescritas para `item().x`)
+  let swapped = false
+  for (const cb of st.listCallbacks) {
+    const item = itemParams.get(cb)
+    if (item && cb.params[0] && !t.isIdentifier(cb.params[0])) {
+      cb.params[0] = gid(item)
+      swapped = true
+    }
+  }
   const fn = ctx.fn!
   const body = fn.node.body
   const restructure = st.decisions.size > 0 || st.awaits.size > 0
@@ -764,5 +1011,5 @@ export function emitBodyFlow(ctx: BodyContext): void {
   // a função compilada não é `async` (§10): o `await` virou `resource` + `continuation`
   fn.node.async = false
   // statements movidos para funções novas / `let` que viraram `const`: escopos do Babel refeitos para as rodadas de JSX
-  if (restructure || st.itemDecls.size) fn.scope.crawl()
+  if (restructure || st.itemDecls.size || swapped) fn.scope.crawl()
 }

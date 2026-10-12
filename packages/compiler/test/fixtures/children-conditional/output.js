@@ -1,5 +1,5 @@
-import { template, insert, branches, component } from 'jotastic/runtime'
-// K-14: filho único condicional de componente → `get children() { return branches(…) }`; K-11 (lista) segue accessor
+import { template, insert, branches, component, list } from 'jotastic/runtime'
+// K-14: filho único condicional de componente → `get children() { return branches(…) }`; K-11/D64 (lista) → âncora + `list(null, …)`
 import { Card } from './card'
 const _t0 = template('<div data-jo="input.tsx:6"><!><!><!></div>')
 const _t1 = template('<p></p>')
@@ -67,12 +67,24 @@ export function A(props) {
     component(
       Card,
       {
-        get children() {
-          return props.items.map((i) => {
-            const _el4 = _t3()
-            insert(_el4, () => i, null)
-            return _el4
-          })
+        children: () => {
+          const _f0 = document.createDocumentFragment()
+          const _m3 = _f0.appendChild(document.createComment(''))
+          list(
+            null,
+            _m3,
+            () => props.items,
+            (i) => {
+              const _el4 = _t3()
+              insert(_el4, () => i(), null)
+              return _el4
+            },
+            undefined,
+            {
+              loc: 'input.tsx:9:14',
+            },
+          )
+          return _f0
         },
       },
       {

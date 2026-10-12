@@ -11,7 +11,7 @@ export function Table(props) {
       (item) => {
         const _el = _t0()
         const _td = _el.firstChild
-        insert(_td, () => item.label, null)
+        insert(_td, () => item().label, null)
         return _el
       },
       undefined,

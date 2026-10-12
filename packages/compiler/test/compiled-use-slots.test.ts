@@ -5,7 +5,7 @@ import * as t from '@babel/types'
 import { compile } from '../src/index'
 import { spec } from './helpers'
 import { SLOTS_INPUT, useFetchInput } from './inputs'
-import { compareSnapshot, lazyItemToValue, replaceStrings, traverse, type AllowEntry } from './snapshot'
+import { compareSnapshot, replaceStrings, traverse, type AllowEntry } from './snapshot'
 
 const ALLOW_03: AllowEntry[] = [
   {
@@ -34,12 +34,6 @@ const ALLOW_03: AllowEntry[] = [
 ]
 
 const ALLOW_06: AllowEntry[] = [
-  {
-    ref: 'D58 (item de lista lazy) — PARTE DE LISTAS, pendente',
-    why: 'compiled/06 lê o item como `i()`; o compilador ainda passa o item direto. Remover quando D58 entrar',
-    side: 'expected',
-    apply: (ast) => lazyItemToValue(ast),
-  },
   {
     ref: '18 §14 (dev: `data-jo` no elemento raiz do template de cada componente)',
     why: 'compiled/06 foi escrito antes do `data-jo` (como compiled/01)',

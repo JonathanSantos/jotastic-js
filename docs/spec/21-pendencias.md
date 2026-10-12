@@ -280,3 +280,8 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | Z-16 | Linha do `data-jo`: compiled/01 usa a linha da função (`Counter.tsx:4`); o compilador usa a do elemento raiz (14) | compilador mantido; allowlist. Decidir |
 | Z-17 | D59: argumento `undefined` em runtime (não literal) não cai no default do callee (`p() ?? d` antigo cobria); `undefined` literal é passado cru | assim |
 | Z-18 | U-3 combinado com outros filhos fora de slot | `not-implemented` |
+| Z-19 | compiled/02 × 18 §5.1: snapshot emite `text(_sp.firstChild ?? _sp.appendChild(…))` em filho único (18 e compiled/01 dizem `insert(el, read, null)`), e não aplica D63 (`filter.get() === f()`) | compilador segue 18; allowlist. Decidir |
+| Z-20 | `text` em `a \|\| b` / `a ?? b` | exige os dois lados escalares (senão um Node em `a` vira "[object HTMLElement]") |
+| Z-21 | `<>{count}{xs.map(…)}</>`: fragmento com outros accessors reaplica o array num efeito e recria a lista | exige suporte no runtime |
+| Z-22 | Custo do `selector` por linha (inscrição/descarte): com ele create 1.30×, append 1.50×, clear 1.90×; sem ele 1.12×/1.18×/1.25× (select 0.70× vs 4.67×) | otimizar o runtime |
+| Z-23 | Tamanho após D58/D63/D64: counter 3519 B (limite 3584, meta 3 KB); TodoMVC **7516 B** (limite 7168; ~165 B do `selector` pelo `filter === f` do nav) | reavaliar limites (X-7) |

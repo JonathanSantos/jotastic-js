@@ -33,7 +33,7 @@ export function Editor(props) {
     (x) => {
       const _el3 = _t2()
       const _input = _el3.firstChild
-      prop(_input, 'value', () => x)
+      prop(_input, 'value', () => x())
       autofocus(_input)
       return _el3
     },

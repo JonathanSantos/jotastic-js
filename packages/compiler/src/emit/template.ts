@@ -262,7 +262,7 @@ function compileElement(path: NodePath<t.JSXElement>, ctx: BodyContext): Compile
     if (only?.kind === 'expression' && isListChild(only.path, ctx)) {
       // lista como único filho → list(el, null, …)
       const e = only.path.node
-      bindings.push({ node, emit: (el) => [listStatement(ctx, e, el, null)] })
+      bindings.push({ node, emit: (el) => listStatement(ctx, e, el, null) })
     } else if (only && dynamic(only)) {
       // único conteúdo dinâmico → insert(el, read, null)
       const v = value(children[0]!)
@@ -280,15 +280,23 @@ function compileElement(path: NodePath<t.JSXElement>, ctx: BodyContext): Compile
           const marker: MarkerNode = { kind: 'marker', needed: true }
           node.children.push(marker)
           const e = c.path.node
-          bindings.push({ node: marker, emit: (_m, markerRef) => [listStatement(ctx, e, node.ref!, markerRef!)] })
+          bindings.push({ node: marker, emit: (_m, markerRef) => listStatement(ctx, e, node.ref!, markerRef!) })
         } else {
           html += '<!>'
           const marker: MarkerNode = { kind: 'marker', needed: true }
           node.children.push(marker)
           const v = value(c)
+          // escalar (D64, 18 §5.1): `text(marker, read)` troca o `<!>` por um Text; resto → `insert`
+          const scalar = c.kind === 'expression' && mod.textContainers.has(c.path.parent)
           bindings.push({
             node: marker,
-            emit: (_m, markerRef) => [t.expressionStatement(mod.call('insert', [gid(node.ref!), v, gid(markerRef!)]))],
+            emit: (_m, markerRef) => [
+              t.expressionStatement(
+                scalar
+                  ? mod.call('text', [gid(markerRef!), v])
+                  : mod.call('insert', [gid(node.ref!), v, gid(markerRef!)]),
+              ),
+            ],
           })
         }
       }

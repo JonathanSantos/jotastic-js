@@ -62,9 +62,7 @@ describe('listas', () => {
     )
   }`
 
-  // D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-  // direto. Voltar a `test` quando o compilador emitir `item()`.
-  test.todo('chave explícita preserva nós; índice vivo `i()`; `let` do item vira signal', async () => {
+  test('chave explícita preserva nós; índice vivo `i()`; `let` do item vira signal', async () => {
     const p = reactive({
       items: [
         { id: 1, t: 'a' },
@@ -194,14 +192,101 @@ describe('children de componente (K-14, K-11)', () => {
     expect(box.querySelector('p')).toBeNull()
   })
 
-  test('K-11: lista fora de filho de elemento continua accessor comum (recria os itens, mas atualiza)', async () => {
+  test('K-11/D64: lista em children de componente → âncora + `list(null, …)`: nós preservados ao crescer', async () => {
+    const out = compile(CODE, { filename: 'K.tsx' }).code
+    expect(out).toMatch(/list\(null, _m\d*,/)
     const p = reactive({ x: 0, items: ['a'] })
     const c = await mount(CODE, 'K', p)
     const box = c.querySelectorAll('div')[1]!
     expect(box.textContent).toBe('a')
+    const a = box.querySelector('i')!
     p.items.push('b')
     await tick()
     expect(Array.from(box.querySelectorAll('i')).map((i) => i.textContent)).toEqual(['a', 'b'])
-    expect(compile(CODE, { filename: 'K.tsx' }).code).not.toMatch(/\blist\(/)
+    expect(box.querySelector('i')).toBe(a)
+    p.items.splice(0, 1)
+    await tick()
+    expect(Array.from(box.querySelectorAll('i')).map((i) => i.textContent)).toEqual(['b'])
+  })
+})
+
+describe('listas sem pai fixo (D64b): fragmento e condicional', () => {
+  const CODE = `export function A(props: { items: { id: number; t: string }[]; open: boolean }) {
+    return (
+      <div>
+        {props.open && props.items.map((it) => <b>{it.t}</b>)}
+        <hr />
+      </div>
+    )
+  }
+  export function F(props: { items: string[] }) {
+    return <>{props.items.map((it) => <p>{it}</p>)}</>
+  }`
+
+  test('lista dentro de condicional: preserva nós ao crescer; fechar remove todas as linhas (inclusive as novas)', async () => {
+    const p = reactive({ items: [{ id: 1, t: 'a' }], open: true })
+    const c = await mount(CODE, 'A', p)
+    const div = c.querySelector('div')!
+    const a = div.querySelector('b')!
+    p.items.push({ id: 2, t: 'b' })
+    await tick()
+    expect(Array.from(div.querySelectorAll('b')).map((b) => b.textContent)).toEqual(['a', 'b'])
+    expect(div.querySelector('b')).toBe(a)
+    expect(div.lastElementChild!.tagName).toBe('HR') // linhas antes da âncora, no lugar da expressão
+    p.open = false
+    await tick()
+    expect(div.querySelectorAll('b')).toHaveLength(0)
+    p.open = true
+    await tick()
+    expect(Array.from(div.querySelectorAll('b')).map((b) => b.textContent)).toEqual(['a', 'b'])
+  })
+
+  test('lista como filho de fragmento: item lazy atualiza o texto sem recriar a linha', async () => {
+    const p = reactive({ items: ['x', 'y'] })
+    const c = await mount(CODE, 'F', p)
+    const first = c.querySelector('p')!
+    p.items.push('z')
+    await tick()
+    expect(Array.from(c.querySelectorAll('p')).map((e) => e.textContent)).toEqual(['x', 'y', 'z'])
+    expect(c.querySelector('p')).toBe(first)
+  })
+})
+
+describe('seleção (D63) e item lazy (D58)', () => {
+  const CODE = `export function S(props: { rows: { id: number; label: string }[] }) {
+    let selected = 0
+    return (
+      <ul>
+        {props.rows.map(({ id, label }) => (
+          <li class={selected === id ? 'on' : ''} onClick={() => (selected = id)}>{label}</li>
+        ))}
+      </ul>
+    )
+  }`
+
+  test('`selected === id` vira selector: trocar a seleção só reavalia a linha antiga e a nova', async () => {
+    expect(compile(CODE, { filename: 'S.tsx' }).code).toMatch(/const _sel0 = selector\(\(\) => selected\.get\(\)\)/)
+    const p = reactive({
+      rows: [
+        { id: 1, label: 'a' },
+        { id: 2, label: 'b' },
+        { id: 3, label: 'c' },
+      ],
+    })
+    const c = await mount(CODE, 'S', p)
+    const lis = () => Array.from(c.querySelectorAll('li'))
+    expect(lis().map((l) => l.className)).toEqual(['', '', ''])
+    lis()[1]!.click()
+    await tick()
+    expect(lis().map((l) => l.className)).toEqual(['', 'on', ''])
+    lis()[2]!.click()
+    await tick()
+    expect(lis().map((l) => l.className)).toEqual(['', '', 'on'])
+    // D58: referência nova com a mesma chave → mesmo nó, dados novos (desestruturação lê `item().label`)
+    const li = lis()[0]!
+    p.rows[0] = { id: 1, label: 'A' }
+    await tick()
+    expect(lis()[0]).toBe(li)
+    expect(li.textContent).toBe('A')
   })
 })

@@ -58,9 +58,7 @@ async function mountWith(...items: string[]) {
   return t
 }
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Todos: monta vazio com mensagem, contador e filtros', async () => {
+test('Todos: monta vazio com mensagem, contador e filtros', async () => {
   const t = await mount()
   expect(t.q('p.empty')!.textContent).toBe('Nada por aqui.')
   expect(t.lis()).toHaveLength(0)
@@ -84,9 +82,7 @@ test('Todos: digitar 1 letra → effects: 1 (prop value do input), lista intocad
   expect(t.lis().every((li, i) => li.isSameNode(before[i]!))).toBe(true)
 })
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Todos: adicionar item → 1 nó inserido; itens existentes isSameNode; draft limpo', async () => {
+test('Todos: adicionar item → 1 nó inserido; itens existentes isSameNode; draft limpo', async () => {
   const t = await mountWith('a', 'b')
   const before = t.lis()
   await t.add('c')
@@ -104,9 +100,7 @@ test.todo('Todos: adicionar item → 1 nó inserido; itens existentes isSameNode
   expect(t.lis()).toHaveLength(3)
 })
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Todos: marcar 1 item → só a classe do li muda na lista + memos remaining/allDone', async () => {
+test('Todos: marcar 1 item → só a classe do li muda na lista + memos remaining/allDone', async () => {
   const t = await mountWith('a', 'b', 'c')
   await t.check(0) // primeiro "done": também liga o botão "Limpar concluídas"
   t.tr.clear()
@@ -128,9 +122,7 @@ test.todo('Todos: marcar 1 item → só a classe do li muda na lista + memos rem
   expect(t.q('footer span')!.textContent).toBe('1 item')
 })
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Todos: editar (dblclick → input com autofocus → digitar → blur)', async () => {
+test('Todos: editar (dblclick → input com autofocus → digitar → blur)', async () => {
   const t = await mountWith('a', 'b')
   const li = t.lis()[0]!
   li.querySelector('span')!.dispatchEvent(new MouseEvent('dblclick'))
@@ -157,9 +149,7 @@ test.todo('Todos: editar (dblclick → input com autofocus → digitar → blur)
   expect(t.lis()[1]!.className).toBe('')
 })
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Todos: filtrar active/done/all', async () => {
+test('Todos: filtrar active/done/all', async () => {
   const t = await mountWith('a', 'b', 'c')
   await t.check(1)
   const [all, active, done] = t.navButtons()
@@ -181,9 +171,7 @@ test.todo('Todos: filtrar active/done/all', async () => {
   expect(t.lis()[0]).not.toBe(liA) // saiu da lista no filtro "done": linha recriada
 })
 
-// D58 (PARTE DE LISTAS, pendente): o runtime já passa `item` lazy (`() => T`) e o compilador ainda lê o item
-// direto. Voltar a `test` quando o compilador emitir `item()`.
-test.todo('Todos: remover, marcar todas e limpar concluídas', async () => {
+test('Todos: remover, marcar todas e limpar concluídas', async () => {
   const t = await mountWith('a', 'b', 'c')
   const liC = t.lis()[2]!
   ;(t.lis()[1]!.querySelector('button') as HTMLButtonElement).click()

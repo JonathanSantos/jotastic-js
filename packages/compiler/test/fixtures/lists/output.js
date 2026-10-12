@@ -1,4 +1,4 @@
-import { template, memo, list, classList, insert, listen } from 'jotastic/runtime'
+import { template, memo, list, classList, insert, listen, text } from 'jotastic/runtime'
 const _t0 = template('<section data-jo="input.tsx:6"><ul></ul><ol><li>primeiro</li><!></ol><p></p></section>')
 const _t1 = template('<li></li>')
 const _t2 = template('<li><!>. <!></li>')
@@ -18,9 +18,9 @@ export function Lists(props) {
     (r) => {
       const _el2 = _t1()
       classList(_el2, () => ({
-        done: r.done,
+        done: r().done,
       }))
-      insert(_el2, () => r.name, null)
+      insert(_el2, () => r().name, null)
       return _el2
     },
     undefined,
@@ -37,8 +37,8 @@ export function Lists(props) {
       const _m1 = _el3.firstChild
       const _m2 = _m1.nextSibling.nextSibling
       listen(_el3, 'click', () => console.log(i()))
-      insert(_el3, () => i() + 1, _m1)
-      insert(_el3, () => r.name, _m2)
+      text(_m1, () => i() + 1)
+      insert(_el3, () => r().name, _m2)
       return _el3
     },
     (r, i) => r.name + i,
@@ -51,7 +51,7 @@ export function Lists(props) {
     null,
     () => props.tags,
     (tag) => {
-      const upper = memo(() => tag.toUpperCase(), {
+      const upper = memo(() => tag().toUpperCase(), {
         name: 'upper',
         loc: 'input.tsx:22:17',
       })

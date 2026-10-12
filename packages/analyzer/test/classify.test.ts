@@ -371,7 +371,8 @@ export function UserPage({ id }: { id: string }) {
   test('11-tabs-context: getters → memoLiteral; Tabs.Tab é componente', () => {
     const a = run(ex('11-tabs-context.tsx'), 'Tabs.tsx')
     expect(kinds(body(a, 'Tabs'))).toEqual({ active: 'state', ids: 'stateLiteral', state: 'memoLiteral' })
-    expect(kinds(body(a, 'Tab'))).toEqual({ tabs: 'useResult', selected: 'memo' })
+    // I-3: `useContext` lê o memo do Provider; o `const` que o recebe é derivado
+    expect(kinds(body(a, 'Tab'))).toEqual({ tabs: 'memo', selected: 'memo' })
   })
 
   test('14-use-form: cópias mutáveis, derivados e funções', () => {
@@ -387,4 +388,21 @@ export function UserPage({ id }: { id: string }) {
       error: 'function',
     })
   })
+})
+
+test('I-3: `const t = useContext(Ctx)` (de jotastic) → memo; `useContext` local sem import continua useResult', () => {
+  const a = run(`import { createContext, useContext } from 'jotastic'
+const Ctx = createContext(0)
+function C() {
+  const t = useContext(Ctx)
+  const { v } = useContext(Ctx)
+  return <p>{t}{v}</p>
+}
+function useContext2() { return 1 }
+function D() {
+  const u = useContext2()
+  return <p>{u}</p>
+}`)
+  expect(kinds(body(a, 'C'))).toEqual({ t: 'memo', v: 'memo' })
+  expect(kinds(body(a, 'D'))).toEqual({ u: 'useResult' })
 })

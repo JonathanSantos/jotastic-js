@@ -1,4 +1,4 @@
-import { template, signal, reactive, memo, insert } from 'jotastic/runtime'
+import { template, signal, reactive, memo, text, insert } from 'jotastic/runtime'
 const _t0 = template('<p data-jo="input.tsx:16"><!> <!> <!> <!> <!> <!></p>')
 export function Literals() {
   const n = signal(1, {
@@ -58,7 +58,7 @@ export function Literals() {
   const _m3 = _m2.nextSibling.nextSibling
   const _m4 = _m3.nextSibling.nextSibling
   const _m5 = _m4.nextSibling.nextSibling
-  insert(_el, () => todos.length, _m0)
+  text(_m0, () => todos.length)
   insert(_el, () => cart.count, _m1)
   insert(_el, () => cart.total, _m2)
   insert(_el, () => derived.get().double, _m3)
