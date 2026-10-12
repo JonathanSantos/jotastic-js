@@ -20,16 +20,16 @@
 // </Card>
 import { template, slots, insert, branches, list, component, SLOTS } from 'jotastic/runtime'
 
+const _t0 = template('<section class="card"><!><div class="body"></div><ul></ul><!></section>')
+const _t1 = template('<header></header>')
+const _t2 = template('<li></li>')
+const _t3 = template('<footer></footer>')
+
 // [ajuste] `items` é livre no snapshot (não declarado em lugar nenhum); constante de módulo para o teste
 export const items = [
   { id: 1, name: 'Ana' },
   { id: 2, name: 'Bia' },
 ]
-
-const _t0 = template('<section class="card"><!><div class="body"></div><ul></ul><!></section>')
-const _t1 = template('<header></header>')
-const _t2 = template('<li></li>')
-const _t3 = template('<footer></footer>')
 
 export function Card(props) {
   const _slots = slots(props.children)          // useSlots(children) → slots(props.children); `slots.x` fica como está
@@ -42,7 +42,7 @@ export function Card(props) {
 
   insert(_el, branches([[() => !!_slots.header, () => { const _h = _t1(); insert(_h, () => _slots.header, null); return _h }]]), _m0)
   insert(_body, () => _slots.default, null)
-  list(_ul, null, () => items, (i) => { const _li = _t2(); insert(_li, () => _slots.row?.(i), null); return _li }, (i) => i.id)
+  list(_ul, null, () => items, (i) => { const _li = _t2(); insert(_li, () => _slots.row?.(i()), null); return _li }, (i) => i.id)   // `i` lazy (D58)
   insert(_el, branches([[() => !!_slots.footer, () => { const _f = _t3(); insert(_f, () => _slots.footer, null); return _f }]]), _m1)
   return _el
 }
@@ -59,7 +59,7 @@ export function Page(props) {
       [SLOTS]: true,
       default: () => _t5(),
       header: () => _t4(),
-      row: (item) => { const _b = _t6(); insert(_b, () => item.name, null); return _b },
+      row: (item) => { const _b = _t6(); insert(_b, () => item.name, null); return _b },      // parâmetro de slot NÃO é lazy: é valor passado pelo filho
       get footer() { return props.admin ? () => _t7() : undefined },     // condicional → getter que devolve função ou undefined
     },
   }, { name: 'Card', loc: 'Page.tsx:2:5' })

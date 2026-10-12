@@ -9,6 +9,7 @@ export {
   tick,
   isTracking,
   abortSignal,
+  selector,
   _void,
   type Signal,
   type Memo,
@@ -37,6 +38,7 @@ export { rest, mergeProps, createContext, provide, useContext, type Context } fr
 export {
   template,
   insert,
+  text,
   attr,
   prop,
   bool,

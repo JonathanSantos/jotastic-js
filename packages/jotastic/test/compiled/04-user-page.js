@@ -9,7 +9,7 @@
 //   const fullName = `${user.data.firstName} ${user.data.lastName}`
 //   return <div><h1>{fullName}</h1><Tabs value={tab} onChange={t => (tab = t)} /></div>
 // }
-import { template, signal, memo, insert, branches, component } from 'jotastic/runtime'
+import { template, state, memo, insert, branches, component } from 'jotastic/runtime'
 import { useFetch } from './03-use-fetch.js' // [ajuste] era './useFetch'
 import { ErrorBox, Spinner, Tabs } from './components.js' // [ajuste] era './components' (stubs de teste)
 
@@ -17,7 +17,7 @@ const _t0 = template('<div><h1></h1><!></div>')
 
 export function UserPage(props) {
   // setup: roda uma vez
-  const user = useFetch(() => `/api/users/${props.id}`, () => undefined)
+  const user = useFetch(() => `/api/users/${props.id}`)
 
   // cada `if (cond) return X` vira um caso; o código depois vira a continuação (fallback)
   return branches([
@@ -25,7 +25,7 @@ export function UserPage(props) {
     [() => !user.data,   () => component(Spinner, {}, { name: 'Spinner', loc: 'UserPage.tsx:5:22' })],
   ], () => {
     // continuação: owner próprio; `tab` e `fullName` pertencem a ela (continuation-state-resets)
-    const tab = signal('posts', { name: 'tab', loc: 'UserPage.tsx:7:7' })
+    const tab = state('posts', { name: 'tab', loc: 'UserPage.tsx:7:7' })          // `tab = t` → state (D60)
     const fullName = memo(() => `${user.data.firstName} ${user.data.lastName}`, { name: 'fullName', loc: 'UserPage.tsx:8:9' })
 
     const _el = _t0()

@@ -10,6 +10,7 @@ import {
   spread,
   style,
   template,
+  text,
   twoWay,
 } from '../src/runtime/dom'
 import {
@@ -506,6 +507,65 @@ describe('DOM (D1–D13)', () => {
     expect(g.namespaceURI).toBe('http://www.w3.org/2000/svg')
     expect(g.firstElementChild!.namespaceURI).toBe('http://www.w3.org/2000/svg')
     expect(g.localName).toBe('g')
+  })
+})
+
+describe('text (D64)', () => {
+  test('troca o `<!>` por um Text na primeira execução; mesmo valor → 0 escritas', () => {
+    const p = template('<p>a<!>b</p>')()
+    const m = p.childNodes[1] as Comment
+    const n = signal<unknown>(1)
+    inRoot(() => text(m, () => n.get()))
+    expect(p.textContent).toBe('a1b')
+    expect(m.parentNode).toBeNull()
+    expect(p.childNodes).toHaveLength(3)
+    const node = p.childNodes[1] as Text
+    expect(node.nodeType).toBe(3)
+    const records = observe(p)
+    n.set('1') // String(1) === '1': nada escreve
+    flush()
+    expect(records()).toHaveLength(0)
+    n.set(2)
+    flush()
+    const recs = records()
+    expect(recs).toHaveLength(1)
+    expect(recs[0]!.type).toBe('characterData')
+    expect(p.childNodes[1]).toBe(node)
+    expect(p.textContent).toBe('a2b')
+  })
+
+  test("null/undefined/boolean → ''", () => {
+    const p = template('<p><!></p>')()
+    const v = signal<unknown>(null)
+    inRoot(() => text(p.firstChild as Comment, () => v.get()))
+    expect(p.childNodes).toHaveLength(1)
+    expect(p.firstChild!.nodeType).toBe(3)
+    expect(p.textContent).toBe('')
+    v.set('x')
+    flush()
+    expect(p.textContent).toBe('x')
+    v.set(undefined)
+    flush()
+    expect(p.textContent).toBe('')
+    v.set(false)
+    flush()
+    expect(p.textContent).toBe('')
+    v.set(0)
+    flush()
+    expect(p.textContent).toBe('0')
+  })
+
+  test('recebendo um Text escreve nele (sem trocar nó); valor igual ao inicial não escreve', () => {
+    const span = document.createElement('span')
+    const t = span.appendChild(document.createTextNode('oi'))
+    const v = signal('oi')
+    const records = observe(span)
+    inRoot(() => text(t, () => v.get()))
+    expect(records()).toHaveLength(0)
+    v.set('olá')
+    flush()
+    expect(span.firstChild).toBe(t)
+    expect(t.data).toBe('olá')
   })
 })
 

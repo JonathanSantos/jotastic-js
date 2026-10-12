@@ -77,11 +77,16 @@ export class Slot {
     this.marker = marker
   }
 
+  /** Pai atual: o do marcador, se está em algum (o conteúdo segue o marcador quando um fragmento é inserido). */
+  where(): Node {
+    return this.marker?.parentNode ?? this.parent
+  }
+
   apply(value: unknown): void {
     const items: (string | Node)[] = []
     collect(value, items)
     const prev = this.current
-    const parent = this.parent
+    const parent = this.where()
 
     // Caso texto: um único Text nosso → só `.data` (e só se mudou).
     if (items.length === 1 && typeof items[0] === 'string' && prev.length === 1 && ownTexts.has(prev[0]!)) {
@@ -132,9 +137,10 @@ export class Slot {
 
   /** Remove os nós atuais do DOM. */
   clear(): void {
+    const parent = this.where()
     for (const n of this.current) {
-      if (n.parentNode === this.parent) {
-        this.parent.removeChild(n)
+      if (n.parentNode === parent) {
+        parent.removeChild(n)
         emitDomWrite(n, 'remove')
       }
     }
@@ -163,6 +169,32 @@ export function insertSlot(parent: Node, value: unknown, marker?: Node | null): 
  */
 export function insert(parent: Node, value: unknown, marker?: Node | null): void {
   insertSlot(parent, value, marker)
+}
+
+/**
+ * Fast path escalar (D64): na primeira execução troca o comentário `<!>` por um Text com o valor; depois só escreve
+ * `.data` se mudou. `null | undefined | boolean` → `''` (como no `insert`). Recebendo um Text, escreve nele direto.
+ */
+export function text(marker: Comment | Text, read: () => unknown): void {
+  let node: Text | null = marker.nodeType === 3 ? (marker as Text) : null
+  let prev: string | null = node && node.data
+  effect(
+    () => {
+      const v = read()
+      const s = v == null || typeof v === 'boolean' ? '' : String(v)
+      if (s === prev) return
+      prev = s
+      if (node === null) {
+        node = document.createTextNode(s)
+        marker.replaceWith(node)
+        emitDomWrite(node, 'insert')
+      } else {
+        node.data = s
+        emitDomWrite(node, 'text')
+      }
+    },
+    { kind: 'render' },
+  )
 }
 
 // ─── Appliers ────────────────────────────────────────────────────────────────

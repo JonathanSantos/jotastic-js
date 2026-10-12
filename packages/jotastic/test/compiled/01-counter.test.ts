@@ -25,9 +25,11 @@ test('Counter: monta o thunk do módulo (step 5)', () => {
   expect(plus.textContent).toBe('+5')
   expect(minus.textContent).toBe('-5')
   expect(reset.disabled).toBe(true)
+  // `text` (D64) troca cada `<!>` por um Text: nenhum comentário sobra nos escalares
+  expect(Array.from(p.childNodes).some((n) => n.nodeType === 8)).toBe(false)
 })
 
-test('Counter: clique em +5 → effects: 4 (count, double, classList, disabled); Counter não reexecuta', async () => {
+test('Counter: clique em +5 → effects: 4 (text count, text double, classList, disabled); Counter não reexecuta', async () => {
   const Spy = vi.fn(Counter)
   const { container } = render(() => component(Spy, { step: 5 }, { name: 'Counter' }))
   const { p, plus, reset } = dom(container)

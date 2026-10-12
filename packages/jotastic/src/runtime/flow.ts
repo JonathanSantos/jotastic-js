@@ -9,7 +9,7 @@ import { emitDevtools, emitDomWrite, devtoolsHook, warn } from './devtools'
 import { collect, hasFunction, insertSlot, Slot } from './dom'
 import { DEV } from './env'
 import { createOwner, dispose, getOwner, handleError, onCleanup, runWithOwner, type DevMeta, type Owner } from './owner'
-import { effect, memo, signal, untrack, type Signal } from './reactive'
+import { effect, isTracking, memo, signal, untrack, type Signal } from './reactive'
 
 /** Resultado de um componente / de uma expressão de JSX (arrays recursivos, L-7). Funções são accessors (lazy). */
 export type Rendered = Node | Rendered[] | string | number | boolean | null | undefined | (() => Rendered)
@@ -108,7 +108,9 @@ export function branches(
 
 interface Row<T> {
   key: unknown
+  /** Valor atual do item. O signal de `item()` só nasce na primeira leitura rastreada (D58). */
   item: T
+  sig: Signal<T> | null
   /** Chave = índice (primitivo sem `key`): valor diferente na posição recria a linha. */
   byIndex: boolean
   owner: Owner
@@ -169,16 +171,19 @@ function stablePositions(s: number[]): void {
  * Chave padrão: objeto → `item.id ?? item.key ?? item`; primitivo → índice. Reconciliação: prefixo/sufixo comum +
  * `Map<key, posição>`; novos criados, ausentes descartados, existentes movidos (`insertBefore`, mesma referência) só
  * se fora da maior subsequência crescente (LIS). Lista esvaziada que é todo o conteúdo do parent: `textContent = ''`.
+ * `item` é lazy (D58): chave igual com referência nova → `set(novo)` no signal da linha; nós e bindings preservados.
+ * `parent === null` (D64): o pai é `marker.parentNode`, lido a cada reconciliação.
  */
 export function list<T>(
-  parent: Node,
+  parent: Node | null,
   marker: Node | null,
   source: () => readonly T[],
-  render: (item: T, index: () => number) => Rendered,
+  render: (item: () => T, index: () => number) => Rendered,
   key?: (item: T, index: number) => unknown,
   dev?: DevMeta,
 ): void {
   const listOwner = getOwner()
+  const parent0 = parent
   let rows: Row<T>[] = []
   /** Chaves sintéticas estáveis para duplicadas: `dups.get(k)[n - 1]` é a n-ésima repetição de `k`. */
   const dups = new Map<unknown, object[]>()
@@ -188,6 +193,7 @@ export function list<T>(
     const row: Row<T> = {
       key: k,
       item,
+      sig: null,
       byIndex,
       owner,
       i,
@@ -197,8 +203,13 @@ export function list<T>(
       slot: null,
       pending: null,
     }
+    // Signals da linha nascem no owner dela (devtools); fora de rastreamento basta o valor atual.
+    const own: <V>(v: V) => Signal<V> = DEV ? (v) => runWithOwner(owner, () => signal(v)) : signal
     const value = renderIn(owner, () =>
-      render(item, () => (row.index ??= DEV ? runWithOwner(owner, () => signal(row.i)) : signal(row.i)).get()),
+      render(
+        () => (isTracking() ? (row.sig ??= own(row.item)).get() : row.item),
+        () => (row.index ??= own(row.i)).get(),
+      ),
     )
     if (hasFunction(value)) {
       row.end = document.createComment('')
@@ -211,7 +222,7 @@ export function list<T>(
     return row
   }
 
-  const removeRow = (row: Row<T>): void => {
+  const removeRow = (row: Row<T>, parent: Node): void => {
     dispose(row.owner)
     for (const n of rowNodes(row as Row<unknown>)) {
       if (n.parentNode === parent) {
@@ -222,6 +233,7 @@ export function list<T>(
   }
 
   const reconcile = (items: T[]): void => {
+    const parent = parent0 ?? marker!.parentNode!
     const n = items.length
     const old = rows
 
@@ -259,20 +271,30 @@ export function list<T>(
 
     const next: Row<T>[] = new Array(n)
     let reused = 0
+    /** Linha reaproveitada na posição j: referência nova do item vai para o signal dela (Object.is → nada). */
+    const reuse = (row: Row<T>, j: number): Row<T> => {
+      const item = items[j]!
+      if (!Object.is(row.item, item)) {
+        row.item = item
+        row.sig?.set(item)
+      }
+      reused++
+      return row
+    }
     let start = 0
     let oldEnd = old.length - 1
     let newEnd = n - 1
 
     // Prefixo e sufixo comuns.
     while (start <= oldEnd && start <= newEnd && fits(old[start]!, start)) {
-      next[start] = old[start++]!
-      reused++
+      next[start] = reuse(old[start]!, start)
+      start++
     }
     while (start <= oldEnd && start <= newEnd && fits(old[oldEnd]!, newEnd)) {
       const r = old[oldEnd--]!
       setIndex(r as Row<unknown>, newEnd)
-      next[newEnd--] = r
-      reused++
+      next[newEnd] = reuse(r, newEnd)
+      newEnd--
     }
 
     // Meio: Map<key, posição antiga>; `from[j - start]` = de onde veio a linha (-1 = nova).
@@ -287,18 +309,17 @@ export function list<T>(
       if (keep) {
         map.delete(keys[j])
         setIndex(r as Row<unknown>, j)
-        next[j] = r
-        reused++
+        next[j] = reuse(r, j)
       } else next[j] = createRow(items[j]!, keys[j], j, byIndex[j]!)
     }
-    if (marker === null && old.length && !reused) {
+    if (parent0 !== null && marker === null && old.length && !reused) {
       // Todas as linhas saem e a lista é todo o conteúdo de `parent` (marker null, 17 §Convenções): de uma vez.
       for (const r of old) {
         dispose(r.owner)
         if (DEV) for (const node of rowNodes(r as Row<unknown>)) emitDomWrite(node, 'remove')
       }
       parent.textContent = ''
-    } else for (const i of map.values()) removeRow(old[i]!)
+    } else for (const i of map.values()) removeRow(old[i]!, parent)
     rows = next
 
     // Posiciona o intervalo alterado de trás para frente; linhas da LIS e nós já no lugar não são tocados.

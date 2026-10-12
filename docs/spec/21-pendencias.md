@@ -272,3 +272,8 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | Z-8 | Contrato `HmrOptions` só tem `preserveState`; implementação mantém `reset` (`// @refresh reset`) | assim |
 | Z-9 | Analyzer W-5: hoisting só para `const x` com um `await` avaliado incondicionalmente; desestruturação/`let`/`c ? await x : y` → `await-position-unsupported` | assim |
 | Z-10 | `prefer-key-in-list` sem evidência dos itens (ex.: `let xs: Todo[]`) não avisa | assim |
+| Z-11 | `list(null, marker)` com marker sem pai na reconciliação (componente devolvendo array no topo) | não tratado; o compilador sempre põe a âncora num pai/fragmento |
+| Z-12 | `text` com comentário sem pai: `replaceWith` não faz nada | assim |
+| Z-13 | Efeito interno do `selector` marcado `quiet` (fora de `counts().effects`) para F17 dar 2 | assim |
+| Z-14 | `selector` com `equals` custom varre todas as chaves (O(linhas) comparações; só marca as que mudaram) | assim |
+| Z-15 | `Slot.where()`: slots de linhas leem o pai atual do marker (necessário para `list(null, …)`) | assim |

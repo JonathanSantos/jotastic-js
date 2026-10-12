@@ -23,7 +23,7 @@ import {
   type Owner,
 } from '../src/runtime/owner'
 import { createContext, provide, useContext } from '../src/runtime/props'
-import { effect, flush, memo, observerCount, signal, state } from '../src/runtime/reactive'
+import { effect, flush, memo, observerCount, selector, selectorSubs, signal, state } from '../src/runtime/reactive'
 import { createRoot } from '../src/runtime/root'
 
 /** Roda `fn` dentro de um owner raiz. */
@@ -202,7 +202,7 @@ describe('fluxo (F1–F16)', () => {
         () => items.get(),
         (item) => {
           const el = li()
-          insert(el, () => item.t, null)
+          insert(el, () => item().t, null)
           return el
         },
       ),
@@ -230,7 +230,7 @@ describe('fluxo (F1–F16)', () => {
         () => items.get(),
         (item, index) => {
           const el = li()
-          insert(el, () => `${item.id}${index()}`, null)
+          insert(el, () => `${item().id}${index()}`, null)
           return el
         },
       ),
@@ -262,7 +262,7 @@ describe('fluxo (F1–F16)', () => {
         () => items.get(),
         (item) => {
           const el = li()
-          insert(el, () => item.t, null)
+          insert(el, () => item().t, null)
           return el
         },
       ),
@@ -276,7 +276,7 @@ describe('fluxo (F1–F16)', () => {
     expect(ul.textContent).toBe('aBc')
   })
 
-  test('F8 list: chave padrão id preserva nós ao reatribuir com mesmos ids', () => {
+  test('F8 list: chave padrão id preserva nós e os bindings mostram os dados novos (D58)', () => {
     const items = signal([
       { id: 1, t: 'a' },
       { id: 2, t: 'b' },
@@ -291,21 +291,27 @@ describe('fluxo (F1–F16)', () => {
         (item) => {
           renders++
           const el = li()
-          el.textContent = item.t
+          insert(el, () => item().t, null)
           return el
         },
       ),
     )
     const before = Array.from(ul.childNodes)
+    const texts = before.map((n) => n.firstChild)
     const records = observe(ul)
     items.set([
       { id: 1, t: 'a' },
-      { id: 2, t: 'b' },
+      { id: 2, t: 'B' },
     ])
     flush()
     expect(renders).toBe(2)
-    expect(records()).toHaveLength(0)
     expect(Array.from(ul.childNodes)).toEqual(before)
+    expect(ul.textContent).toBe('aB')
+    // Só o texto da linha 2 muda (mesmo Text); a linha 1 recebeu objeto novo com o mesmo `t`: nenhuma escrita.
+    const recs = records()
+    expect(recs).toHaveLength(1)
+    expect(recs[0]!.type).toBe('characterData')
+    expect(recs[0]!.target).toBe(texts[1])
   })
 
   test('F9 list: todos removidos e novos emite list:recreated', () => {
@@ -340,9 +346,9 @@ describe('fluxo (F1–F16)', () => {
         null,
         () => items.get(),
         (v) => {
-          onCleanup(() => disposed.push(v))
+          onCleanup(() => disposed.push(v()))
           const el = li()
-          el.textContent = v
+          el.textContent = v()
           return el
         },
       ),
@@ -423,7 +429,7 @@ describe('fluxo (F1–F16)', () => {
         () => props.items,
         (i) => {
           const el = li()
-          insert(el, () => (s.row as ((i: unknown) => Rendered) | undefined)?.(i), null)
+          insert(el, () => (s.row as ((i: unknown) => Rendered) | undefined)?.(i()), null)
           return el
         },
         (i) => i.id,
@@ -620,10 +626,10 @@ describe('list: reconciliação mínima (LIS) e fast paths', () => {
         null,
         () => items.get(),
         (item, index) => {
-          onCleanup(() => cleaned.push(item.id))
+          onCleanup(() => cleaned.push(item().id))
           const el = li()
-          if (opts.index) insert(el, () => `${item.id}:${index()}`, null)
-          else el.textContent = String(item.id)
+          if (opts.index) insert(el, () => `${item().id}:${index()}`, null)
+          else el.textContent = String(item().id)
           return el
         },
       )
@@ -760,9 +766,9 @@ describe('list: reconciliação mínima (LIS) e fast paths', () => {
         null,
         () => items.get(),
         (item) => {
-          onCleanup(() => cleaned.push(item.id))
+          onCleanup(() => cleaned.push(item().id))
           const el = li()
-          effect(() => void el.classList.toggle('on', sel.get() === item.id), { kind: 'render' })
+          effect(() => void el.classList.toggle('on', sel.get() === item().id), { kind: 'render' })
           return el
         },
       ),
@@ -810,9 +816,9 @@ describe('list: reconciliação mínima (LIS) e fast paths', () => {
         marker,
         () => items.get(),
         (item) => {
-          onCleanup(() => cleaned.push(item.id))
+          onCleanup(() => cleaned.push(item().id))
           const el = li()
-          el.textContent = String(item.id)
+          el.textContent = String(item().id)
           return el
         },
       ),
@@ -842,7 +848,7 @@ describe('list: reconciliação mínima (LIS) e fast paths', () => {
         (item) => {
           renders++
           const el = li()
-          el.textContent = item.t
+          el.textContent = item().t
           return el
         },
       ),
@@ -869,7 +875,7 @@ describe('list: reconciliação mínima (LIS) e fast paths', () => {
         (item, index) => {
           atSetup.push(index())
           const el = li()
-          if (item.id === 'c') insert(el, () => index(), null)
+          if (item().id === 'c') insert(el, () => index(), null)
           return el
         },
       ),
@@ -879,5 +885,206 @@ describe('list: reconciliação mínima (LIS) e fast paths', () => {
     items.get().shift()
     flush()
     expect(ul.textContent).toBe('1')
+  })
+})
+
+describe('list: item lazy (D58), selector (D63), pai do marker (D64)', () => {
+  test('item() fora de rastreamento lê o valor atual; mesma referência não notifica', () => {
+    const a = { id: 1, t: 'a' }
+    const items = signal([a])
+    const ul = document.createElement('ul')
+    let read: (() => { id: number; t: string }) | null = null
+    let runs = 0
+    inRoot(() =>
+      list(
+        ul,
+        null,
+        () => items.get(),
+        (item) => {
+          read = item
+          const el = li()
+          effect(
+            () => {
+              runs++
+              el.textContent = item().t
+            },
+            { kind: 'render' },
+          )
+          return el
+        },
+      ),
+    )
+    expect(runs).toBe(1)
+    items.set([a]) // mesma referência no array novo: Object.is → nenhum binding roda
+    flush()
+    expect(runs).toBe(1)
+    const a2 = { id: 1, t: 'z' }
+    items.set([a2])
+    flush()
+    expect(runs).toBe(2)
+    expect(read!()).toBe(a2)
+    expect(ul.textContent).toBe('z')
+  })
+
+  test('F17 selector: mudar a seleção roda só os efeitos das linhas antiga e nova (1000 linhas)', () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ id: i }))
+    const selected = signal<number | null>(null)
+    const ul = document.createElement('ul')
+    let runs = 0
+    let isSelected!: (v: number | null) => boolean
+    inRoot(() => {
+      isSelected = selector(() => selected.get())
+      list(
+        ul,
+        null,
+        () => rows,
+        (item) => {
+          const el = li()
+          effect(
+            () => {
+              runs++
+              el.className = isSelected(item().id) ? 'danger' : ''
+            },
+            { kind: 'render' },
+          )
+          return el
+        },
+      )
+    })
+    const events = installDevtools()
+    const runsOf = () => (events.find((e) => e.type === 'flush:end') as { effects: number } | undefined)?.effects
+    runs = 0
+    selected.set(10)
+    flush()
+    expect(runs).toBe(1) // nada estava selecionado: só a linha nova
+    expect(runsOf()).toBe(1)
+    expect(ul.children[10]!.className).toBe('danger')
+    events.length = 0
+    runs = 0
+    selected.set(500)
+    flush()
+    expect(runs).toBe(2)
+    expect(runsOf()).toBe(2)
+    expect(ul.children[10]!.className).toBe('')
+    expect(ul.children[500]!.className).toBe('danger')
+    expect(Array.from(ul.children).filter((c) => c.className === 'danger')).toHaveLength(1)
+    // fora de rastreamento: só responde, não assina
+    expect(isSelected(500)).toBe(true)
+    expect(isSelected(10)).toBe(false)
+  })
+
+  test('selector: dispose das linhas remove os observadores do mapa; dispose do owner para de vigiar', () => {
+    const items = signal([{ id: 1 }, { id: 2 }, { id: 3 }])
+    const selected = signal(1)
+    const ul = document.createElement('ul')
+    let isSelected!: (v: number) => boolean
+    const root = inRoot((root) => {
+      isSelected = selector(() => selected.get())
+      list(
+        ul,
+        null,
+        () => items.get(),
+        (item) => {
+          const el = li()
+          effect(() => void el.classList.toggle('on', isSelected(item().id)), { kind: 'render' })
+          return el
+        },
+      )
+      return root
+    })
+    const subs = selectorSubs!.get(isSelected)!
+    expect([...subs.keys()].sort()).toEqual([1, 2, 3])
+    items.set([{ id: 3 }])
+    flush()
+    expect([...subs.keys()]).toEqual([3])
+    expect(observerCount(selected)).toBe(1) // o vigia do selector
+    dispose(root)
+    expect(subs.size).toBe(0)
+    expect(observerCount(selected)).toBe(0)
+  })
+
+  test('selector: leitura logo após o set (antes do flush) já vê a seleção nova', () => {
+    const selected = signal('a')
+    const isSelected = inRoot(() => selector(() => selected.get()))
+    selected.set('b')
+    expect(isSelected('b')).toBe(true)
+    expect(isSelected('a')).toBe(false)
+  })
+
+  test('selector: equals próprio notifica as chaves cuja resposta mudou', () => {
+    const selected = signal({ id: 1 })
+    const ul = document.createElement('ul')
+    const runs: number[] = []
+    inRoot(() => {
+      const isSelected = selector(
+        () => selected.get(),
+        (a, b) => a.id === b.id,
+      )
+      list(
+        ul,
+        null,
+        () => [{ id: 1 }, { id: 2 }, { id: 3 }],
+        (item) => {
+          const el = li()
+          effect(
+            () => {
+              runs.push(item().id)
+              el.className = isSelected(item()) ? 'on' : ''
+            },
+            { kind: 'render' },
+          )
+          return el
+        },
+      )
+    })
+    runs.length = 0
+    selected.set({ id: 1 }) // objeto novo, igual por `equals`: nada
+    flush()
+    expect(runs).toEqual([])
+    selected.set({ id: 3 })
+    flush()
+    expect(runs.sort()).toEqual([1, 3])
+    expect(Array.from(ul.children, (c) => c.className)).toEqual(['', '', 'on'])
+  })
+
+  test('F18 list(null, marker): ancorada num fragmento que depois é inserido noutro pai', () => {
+    const items = state([
+      { id: 1, t: 'a' },
+      { id: 2, t: 'b' },
+    ])
+    const frag = document.createDocumentFragment()
+    const marker = frag.appendChild(document.createComment(''))
+    inRoot(() =>
+      list(
+        null,
+        marker,
+        () => items.get(),
+        (item) => {
+          const el = li()
+          // conteúdo dinâmico na linha (intervalo com marcador próprio) também segue o pai
+          return [el, () => item().t]
+        },
+      ),
+    )
+    expect(frag.textContent).toBe('ab')
+    const div = document.createElement('div')
+    const head = div.appendChild(document.createElement('p'))
+    div.appendChild(frag)
+    const tail = div.appendChild(document.createElement('p'))
+    expect(frag.childNodes).toHaveLength(0)
+    items.get().push({ id: 3, t: 'c' })
+    items.get()[0]!.t = 'A'
+    flush()
+    expect(div.textContent).toBe('Abc')
+    items.set([items.get()[2]!, items.get()[0]!])
+    flush()
+    expect(div.textContent).toBe('cA')
+    expect(div.firstChild).toBe(head)
+    expect(div.lastChild).toBe(tail)
+    expect(marker.parentNode).toBe(div)
+    // esvaziar com parent null nunca usa `textContent = ''` (o pai tem outros nós)
+    items.set([])
+    flush()
+    expect(Array.from(div.childNodes)).toEqual([head, marker, tail])
   })
 })

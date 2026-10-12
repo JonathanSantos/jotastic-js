@@ -1,8 +1,8 @@
 // Cópia de docs/spec/compiled/01-counter.js para rodar no runtime (passo 3). Ajustes marcados com `// [ajuste]`.
 // Entrada: examples/01-counter.tsx
-import { template, signal, memo, insert, classList, bool, listen, component, createRoot, untrack } from 'jotastic/runtime'
+import { template, signal, memo, insert, text, classList, bool, listen, component } from 'jotastic/runtime'
 
-const _t0 = template('<section><h2></h2><p><!> (dobro: <!>)</p><button>+<!></button><button>-<!></button><button>Zerar</button></section>')
+const _t0 = template('<section data-jo="Counter.tsx:4"><h2></h2><p><!> (dobro: <!>)</p><button>+<!></button><button>-<!></button><button>Zerar</button></section>')
 
 export function Counter(props) {
   // `label` e `step` só são lidos no JSX → getters de props, sem signal.
@@ -25,20 +25,20 @@ export function Counter(props) {
   const _m3 = _b2.firstChild.nextSibling          // <!> de {step} no "-"
   const _b3 = _b2.nextSibling
 
-  insert(_h2, () => props.label ?? 'Contador', null)
+  insert(_h2, () => props.label ?? 'Contador', null)                            // prop sem prova de primitivo → insert
   classList(_p, () => ({ even: isEven.get(), odd: !isEven.get() }))
-  insert(_p, () => count.get(), _m0)
-  insert(_p, () => double.get(), _m1)
+  text(_m0, () => count.get())                                                  // signal primitivo → text (D64)
+  text(_m1, () => double.get())
   listen(_b1, 'click', () => count.set(count.get() + (props.step ?? 1)))
-  insert(_b1, () => props.step ?? 1, _m2)
+  text(_m2, () => props.step ?? 1)                                             // `?? 1` é provavelmente primitivo
   listen(_b2, 'click', () => count.set(count.get() - (props.step ?? 1)))
-  insert(_b2, () => props.step ?? 1, _m3)
+  text(_m3, () => props.step ?? 1)
   listen(_b3, 'click', reset)
   bool(_b3, 'disabled', () => count.get() === 0)
 
   return _el
 }
 
-// mount(<Counter step={5} />, '#app')  →  JSX fora de corpo reativo vira thunk
-// [ajuste] era `createRoot(document.querySelector('#app'), () => …)`; o teste monta o thunk com `render` de @jotastic/test
-export const App = () => component(Counter, { step: 5 }, { name: 'Counter', loc: 'Counter.tsx:27:7' })
+// mount(<Counter step={5} />, '#app')  →  JSX fora de corpo reativo vira thunk; `mount` continua importado de `jotastic`
+// [ajuste] era `mount(() => …, '#app')`; o teste monta o thunk com `render` de @jotastic/test
+export const App = () => component(Counter, { step: 5 }, { name: 'Counter', loc: 'Counter.tsx:26:7' })

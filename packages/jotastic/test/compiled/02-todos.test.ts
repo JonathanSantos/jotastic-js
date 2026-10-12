@@ -93,9 +93,9 @@ test('Todos: adicionar item → 1 nó inserido; itens existentes isSameNode; dra
   expect(t.lis()).toHaveLength(3)
 })
 
-test('Todos: marcar 1 item → só a classe do li muda na lista + memos remaining/allDone', async () => {
+test('Todos: marcar 1 item → efeitos só daquele li + rodapé; zero efeitos em outros itens (19 C-1)', async () => {
   const t = await mountWith('a', 'b', 'c')
-  await t.check(0) // primeiro "done": também liga o botão "Limpar concluídas"
+  await t.check(0) // primeiro "done": também liga o botão "Limpar concluídas" (+2, fora desta medição)
   t.tr.clear()
   resetCounts()
   const before = t.lis()
@@ -103,11 +103,12 @@ test('Todos: marcar 1 item → só a classe do li muda na lista + memos remainin
   await t.check(1)
 
   expect(t.lis()[1]!.className).toBe('done')
-  // Na lista: 1 escrita (classList do li). `prop checked` do próprio checkbox roda, mas não escreve.
+  // Na lista: só a classe do li marcado. `prop checked` do próprio checkbox roda, mas não escreve; o `<ul>` em si não
+  // tem escritas (nada inserido, removido ou movido).
   expect(t.ulWrites()).toBe(1)
+  expect(t.tr.events.filter((e) => e.type === 'dom:write' && e.node === t.ul)).toHaveLength(0)
   expect(t.tr.writes()).toEqual(['text:#text', 'text:#text', 'class:li']) // "1", "item" no rodapé
-  // effects: classList do li + prop checked do checkbox + {remaining} + {remaining === 1 ? …} (ver relatório:
-  // o 19 diz `effects: 1` contando só o li; o rodapé depende de `remaining` e roda necessariamente).
+  // effects: classList do li + prop checked (daquele li) + text {remaining} + text {item/itens}. Zero em outros itens.
   expect(counts().effects).toBe(4)
   // memos: remaining, allDone (+ índice do branch "Limpar concluídas", que lê `remaining`)
   expect(t.tr.memos()).toEqual(['remaining', 'allDone', expect.stringMatching(/^#\d+$/)])

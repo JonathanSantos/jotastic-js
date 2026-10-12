@@ -54,7 +54,7 @@ type State = typeof CLEAN | typeof CHECK | typeof DIRTY
 const LOOP_LIMIT = 100
 const NO_ERROR: unknown = Symbol('no-error')
 
-type Source = SignalNode<any> | MemoNode<any>
+type Source = SignalNode<any> | MemoNode<any> | SelectorNode
 type Computation = MemoNode<any> | EffectNode
 
 let currentObserver: Computation | null = null
@@ -360,6 +360,8 @@ class EffectNode implements OwnerImpl {
   declare readonly parent: Owner | null
   /** Fila: `render` (bindings, primeira execução síncrona) ou `user`. */
   declare readonly type: 'render' | 'user'
+  /** Dev: encanamento interno (vigia do `selector`), fora de `counts().effects`. */
+  declare quiet?: boolean
 
   constructor(fn: () => void | Cleanup, parent: Owner | null, kind: 'render' | 'user') {
     this.fn = fn
@@ -394,7 +396,7 @@ class EffectNode implements OwnerImpl {
       setOwner(prevOwner)
     }
     if (DEV) {
-      stats.effects++
+      if (!this.quiet) stats.effects++
       if (hook)
         hook.emit({ type: 'effect:run', id: this.id, durationMs: performance.now() - start, flush: stats.flush })
     }
@@ -467,6 +469,79 @@ export function effect(fn: () => void | Cleanup, opts?: EffectOptions): Dispose 
 
 /** Thunk compartilhado para parâmetros ausentes de `use*` (D59): `function useX(a = _void)`. */
 export const _void = (): undefined => undefined
+
+// ─── selector ────────────────────────────────────────────────────────────────
+
+/** Fonte por valor do `selector`: some do mapa quando o último observador sai (re-execução ou dispose). */
+class SelectorNode {
+  declare readonly observers: Set<Computation>
+  constructor(key: unknown, map: Map<unknown, SelectorNode>) {
+    const node = this
+    this.observers = new (class extends Set<Computation> {
+      override delete(c: Computation): boolean {
+        const r = super.delete(c)
+        if (r && this.size === 0 && map.get(key) === node) map.delete(key)
+        return r
+      }
+    })()
+  }
+}
+
+/**
+ * Seleção por valor (D63): `(v) => boolean` que assina POR VALOR (`Map<valor, observadores>`). Mudar a seleção marca só
+ * os observadores do valor antigo e do novo. Com `equals` próprio, varre as chaves e marca as que mudaram de resposta.
+ * A fonte é vigiada por um efeito de render interno (não conta em `counts().effects`).
+ */
+export function selector<T>(source: () => T, equals?: (a: T, b: T) => boolean): (value: T) => boolean {
+  const subs = new Map<unknown, SelectorNode>()
+  const eq = equals ?? Object.is
+  let current: T
+  let started = false
+  const notify = (node: SelectorNode | undefined) => {
+    if (node) for (const o of node.observers) mark(o, DIRTY)
+  }
+  const owner = getOwner()
+  const watcher = new EffectNode(
+    () => {
+      const next = source()
+      const prev = current
+      current = next
+      if (!started) return void (started = true)
+      if (eq(prev, next)) return
+      if (equals) {
+        for (const [k, node] of subs) if (equals(k as T, prev) !== equals(k as T, next)) notify(node)
+      } else {
+        notify(subs.get(prev))
+        notify(subs.get(next))
+      }
+    },
+    owner,
+    'render',
+  )
+  if (DEV) watcher.quiet = true
+  if (owner) registerDisposable(owner, watcher)
+  watcher.run()
+  const pred = (value: T): boolean => {
+    // Leitura antes do flush (ex.: num handler logo após o `set`): atualiza a seleção agora.
+    if (watcher.state !== CLEAN && !watcher.disposed) {
+      resolveCheck(watcher)
+      if (watcher.state === DIRTY) watcher.run()
+    }
+    if (currentObserver !== null) {
+      let node = subs.get(value)
+      if (!node) subs.set(value, (node = new SelectorNode(value, subs)))
+      track(node)
+    }
+    return eq(value, current)
+  }
+  if (DEV) selectorSubs!.set(pred, subs)
+  return pred
+}
+
+/** Interno (dev, testes): mapa de observadores por valor de cada `selector`. */
+export const selectorSubs: WeakMap<Function, Map<unknown, { observers: Set<unknown> }>> | null = DEV
+  ? new WeakMap()
+  : null
 
 // ─── Rastreamento ────────────────────────────────────────────────────────────
 

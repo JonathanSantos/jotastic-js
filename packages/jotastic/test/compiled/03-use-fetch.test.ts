@@ -124,17 +124,17 @@ test('useMediaQuery: valor inicial, evento change, troca de query move o listene
   await tick()
   expect(container.textContent).toBe('sim')
 
-  // Pendência (relatório): trocar a query não relê `mql.matches`; o valor fica o da query anterior até um `change`
+  // examples/07 (22): `watch` ressincroniza `matches` com `mql.matches` quando a query muda
   query.set('(min-width: 100px) and (x)') // FakeMql nasce com matches = true
   await tick()
   expect(mqls[2]!.matches).toBe(true)
   mqls[1]!.change(false)
   await tick()
   expect(container.textContent).toBe('sim') // listener antigo removido
-  query.set('(max-width: 1px)') // nasce false, mas o texto não muda
+  query.set('(max-width: 1px)') // nasce false: o texto acompanha
   await tick()
   expect(mqls[3]!.matches).toBe(false)
-  expect(container.textContent).toBe('sim')
+  expect(container.textContent).toBe('não')
 })
 
 test('useClickOutside: handler (getter) chamado só para clique fora do elemento', async () => {

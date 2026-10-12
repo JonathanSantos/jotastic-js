@@ -25,9 +25,9 @@ export function Tabs(props) {
     () => ['posts', 'about'],
     (t) => {
       const _b = _t3()
-      classList(_b, () => ({ active: props.value === t }))
-      listen(_b, 'click', () => props.onChange(t))
-      insert(_b, () => t, null)
+      classList(_b, () => ({ active: props.value === t() }))
+      listen(_b, 'click', () => props.onChange(t()))
+      insert(_b, () => t(), null)
       return _b
     },
   )

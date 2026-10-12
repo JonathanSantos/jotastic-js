@@ -1,6 +1,6 @@
 // Cópia de docs/spec/compiled/02-todos.js para rodar no runtime (passo 3). Ajustes marcados com `// [ajuste]`.
 // Entrada: examples/02-todos.tsx
-import { template, state, signal, memo, insert, classList, bool, prop, listen, twoWay, branches, list, on, autofocus } from 'jotastic/runtime'
+import { template, state, signal, memo, insert, text, classList, prop, listen, twoWay, branches, list, on, autofocus } from 'jotastic/runtime'
 
 const _t0 = template('<section class="todoapp"><form><input placeholder="O que fazer?" autofocus></form><!><label><input type="checkbox"> Marcar todas</label><ul></ul><footer><span><!> <!></span><nav></nav><!></footer></section>')
 const _t1 = template('<p class="empty">Nada por aqui.</p>')
@@ -13,7 +13,7 @@ const _t6 = template('<button>Limpar concluídas</button>')
 export function Todos() {
   const todos = state([], { name: 'todos', loc: 'Todos.tsx:7:7' })           // array → `state` (proxy ao entrar)
   const draft = signal('', { name: 'draft', loc: 'Todos.tsx:8:7' })
-  const filter = signal('all', { name: 'filter', loc: 'Todos.tsx:9:7' })
+  const filter = state('all', { name: 'filter', loc: 'Todos.tsx:9:7' })             // `filter = f` não é provavelmente primitivo → state (D60)
 
   const remaining = memo(() => todos.get().filter(t => !t.done).length, { name: 'remaining', loc: 'Todos.tsx:12:9' })
   const visible = memo(() => filter.get() === 'all' ? todos.get() : todos.get().filter(t => (filter.get() === 'done') === t.done), { name: 'visible', loc: 'Todos.tsx:13:9' })
@@ -59,39 +59,39 @@ export function Todos() {
   prop(_check, 'checked', () => allDone.get())
   listen(_check, 'change', toggleAll)                                          // tem handler → one-way + handler
 
-  list(_ul, null, () => visible.get(), (todo) => {                              // key omitida → item.id
+  list(_ul, null, () => visible.get(), (todo) => {                              // key omitida → item.id; `todo` é lazy (D58)
     const _li = _t2()
     const _cb = _li.firstChild
     const _m = _cb.nextSibling
     const _btn = _m.nextSibling
-    classList(_li, () => ({ done: todo.done, editing: todo.editing }))
-    prop(_cb, 'checked', () => todo.done)
-    twoWay(_cb, 'checked', v => (todo.done = v))
-    insert(_li, branches([[() => todo.editing, () => {
+    classList(_li, () => ({ done: todo().done, editing: todo().editing }))
+    prop(_cb, 'checked', () => todo().done)
+    twoWay(_cb, 'checked', v => (todo().done = v))
+    insert(_li, branches([[() => !!todo().editing, () => {
       const _in = _t3()
-      prop(_in, 'value', () => todo.text)
-      twoWay(_in, 'value', v => (todo.text = v))
-      listen(_in, 'blur', () => (todo.editing = false))
+      prop(_in, 'value', () => todo().text)
+      twoWay(_in, 'value', v => (todo().text = v))
+      listen(_in, 'blur', () => (todo().editing = false))
       autofocus(_in)
       return _in
     }]], () => {
       const _sp = _t4()
-      listen(_sp, 'dblclick', () => (todo.editing = true))
-      insert(_sp, () => todo.text, null)
+      listen(_sp, 'dblclick', () => (todo().editing = true))
+      text(_sp.firstChild ?? _sp.appendChild(document.createTextNode('')), () => todo().text)   // escalar → text (D64)
       return _sp
     }), _m)
-    listen(_btn, 'click', () => todos.set(todos.get().filter(t => t !== todo)))
+    listen(_btn, 'click', () => todos.set(todos.get().filter(t => t !== todo())))
     return _li
   }, undefined, { loc: 'Todos.tsx:41:10' })
 
-  insert(_span, () => remaining.get(), _m1)
-  insert(_span, () => remaining.get() === 1 ? 'item' : 'itens', _m2)
+  text(_m1, () => remaining.get())                                             // escalar → text (D64)
+  text(_m2, () => remaining.get() === 1 ? 'item' : 'itens')
 
   list(_nav, null, () => ['all', 'active', 'done'], (f) => {                   // primitivos → chave por índice
     const _b = _t5()
-    classList(_b, () => ({ active: filter.get() === f }))
-    listen(_b, 'click', () => filter.set(f))
-    insert(_b, () => f, null)
+    classList(_b, () => ({ active: filter.get() === f() }))
+    listen(_b, 'click', () => filter.set(f()))
+    text(_b.appendChild(document.createTextNode('')), () => f())
     return _b
   })
 
