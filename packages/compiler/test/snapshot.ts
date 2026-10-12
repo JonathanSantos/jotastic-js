@@ -87,3 +87,81 @@ export function sliceFunction(source: string, name: string): string {
   const end = lines.findIndex((l, i) => i > start && l === '}')
   return lines.slice(start, end + 1).join('\n')
 }
+
+/**
+ * D64 — PARTE DE LISTAS/`text`, pendente: `text(_m, read)` do snapshot → `insert(pai, read, _m)`, com o pai lido da
+ * resolução de nós (`const _m = _p.firstChild` → `_p`; `const _m1 = _m0.nextSibling…` → pai de `_m0`).
+ */
+export function textToInsert(ast: t.File): boolean {
+  const inits = new Map<string, t.Expression>()
+  traverse(ast, {
+    VariableDeclarator(p) {
+      if (t.isIdentifier(p.node.id) && p.node.init) inits.set(p.node.id.name, p.node.init)
+    },
+  })
+  const parentOf = (name: string): string | null => {
+    let e = inits.get(name)
+    let first: string | null = null
+    while (e && t.isMemberExpression(e) && t.isIdentifier(e.property)) {
+      first = e.property.name
+      e = e.object
+    }
+    if (!e || !t.isIdentifier(e)) return null
+    return first === 'firstChild' ? e.name : first === 'nextSibling' ? parentOf(e.name) : null
+  }
+  let changed = false
+  traverse(ast, {
+    CallExpression(p) {
+      const { callee, arguments: args } = p.node
+      if (!t.isIdentifier(callee, { name: 'text' }) || args.length !== 2) return
+      const [node, read] = args as [t.Expression, t.Expression]
+      // único filho: `text(_sp.firstChild ?? _sp.appendChild(…), read)` / `text(_b.appendChild(…), read)` → `insert(_sp, read, null)`
+      const appended = t.isLogicalExpression(node) ? node.right : node
+      if (
+        t.isCallExpression(appended) &&
+        t.isMemberExpression(appended.callee) &&
+        t.isIdentifier(appended.callee.property, { name: 'appendChild' }) &&
+        t.isIdentifier(appended.callee.object)
+      ) {
+        p.replaceWith(t.callExpression(t.identifier('insert'), [appended.callee.object, read, t.nullLiteral()]))
+        changed = true
+        return
+      }
+      if (!t.isIdentifier(node)) return
+      const parent = parentOf(node.name)
+      if (!parent) return
+      p.replaceWith(t.callExpression(t.identifier('insert'), [t.identifier(parent), read, node]))
+      changed = true
+    },
+  })
+  const imp = ast.program.body[0] as t.ImportDeclaration
+  imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'text')
+  return changed
+}
+
+/**
+ * D58 — PARTE DE LISTAS, pendente: no `render` de cada `list(…)` do snapshot, `item()` → `item` (o compilador ainda
+ * passa o item direto). Devolve se mudou algo.
+ */
+export function lazyItemToValue(ast: t.File): boolean {
+  let changed = false
+  traverse(ast, {
+    CallExpression(p) {
+      if (!t.isIdentifier(p.node.callee, { name: 'list' })) return
+      const render = p.get('arguments')[3]
+      if (!render || !render.isFunction()) return
+      const param = render.node.params[0]
+      if (!t.isIdentifier(param)) return
+      const name = param.name
+      render.traverse({
+        CallExpression(q) {
+          if (t.isIdentifier(q.node.callee, { name }) && !q.node.arguments.length) {
+            q.replaceWith(t.identifier(name))
+            changed = true
+          }
+        },
+      })
+    },
+  })
+  return changed
+}

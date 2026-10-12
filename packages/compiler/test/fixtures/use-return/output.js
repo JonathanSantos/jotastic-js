@@ -1,7 +1,7 @@
-import { effect, signal, memo, reactive } from 'jotastic/runtime'
+import { _void, effect, signal, memo, reactive } from 'jotastic/runtime'
 // 17 §Convenções: retorno por propriedade do literal
 
-export function useReturn(x) {
+export function useReturn(x = _void) {
   const count = signal(0, {
     name: 'count',
     loc: 'input.ts:5:7',

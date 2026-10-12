@@ -249,11 +249,13 @@ function registerListCallback(ctx: BodyContext, call: NodePath<t.CallExpression 
  * Leituras de `x` → `_rN.value.get()` (folhas de desestruturação: `_rN.value.get()[0]`); `let x` → `x = v` vira
  * `_rN.value.set(v)` (D36: sobrescrita local; `x.campo = v` passa pelo proxy).
  */
-function registerAwait(ctx: BodyContext, node: t.AwaitExpression): void {
+function registerAwait(ctx: BodyContext, node: t.AwaitExpression, hoisted: boolean): void {
   const st = stateOf(ctx)
   const fn = ctx.fn!
   const s = rootStatementOf(ctx, node)
   let declarator: t.VariableDeclarator | null = null
+  if (hoisted && s && t.isVariableDeclaration(s) && s.declarations.length === 1)
+    return registerHoistedAwait(ctx, s, s.declarations[0]!, node)
   if (s && t.isVariableDeclaration(s) && s.declarations.length === 1 && s.declarations[0]!.init === node)
     declarator = s.declarations[0]!
   else if (!(s && t.isExpressionStatement(s) && s.expression === node))
@@ -295,6 +297,47 @@ function registerAwait(ctx: BodyContext, node: t.AwaitExpression): void {
   }
 }
 
+/** Cópia de `node` com `target` (por identidade) trocado por `make()`; o resto mantém `loc`. */
+function cloneReplacing(node: t.Node, target: t.Node, make: () => t.Node): t.Node {
+  if (node === target) return make()
+  const copy = { ...node } as unknown as Record<string, unknown>
+  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    const child = copy[key]
+    if (Array.isArray(child))
+      copy[key] = child.map((c) => (c && typeof c === 'object' && 'type' in c ? cloneReplacing(c, target, make) : c))
+    else if (child && typeof child === 'object' && 'type' in child)
+      copy[key] = cloneReplacing(child as t.Node, target, make)
+  }
+  return copy as unknown as t.Node
+}
+
+/**
+ * W-5 (18 §10.1): `const x = f(await e)` / `(await e).y` → o `await` é içado para `const _rN = resource(() => e')` e
+ * cada leitura de `x` vira o inicializador com o `await` trocado por `_rN.value.get()` (ex.: `_r0.value.get().length`).
+ * O analyzer garante um só declarador `const` com identificador e o `await` avaliado incondicionalmente.
+ */
+function registerHoistedAwait(
+  ctx: BodyContext,
+  s: t.VariableDeclaration,
+  declarator: t.VariableDeclarator,
+  node: t.AwaitExpression,
+): void {
+  const st = stateOf(ctx)
+  const name = ctx.name('_r', true)
+  st.awaits.set(s, { name, node, declarator })
+  const id = declarator.id
+  if (!t.isIdentifier(id) || !declarator.init)
+    return ctx.mod.notImplemented(declarator, '`await` içado sem identificador')
+  // modelo tirado ANTES da reescrita de §4 (as leituras dentro dele são reescritas a cada uso)
+  const marker = t.identifier(name)
+  const model = cloneReplacing(declarator.init, node, () => marker) as t.Expression
+  const value = () => callMethod(member(gid(name), 'value'), 'get')
+  const b = ctx.fn!.scope.getBinding(id.name)
+  if (!b) return
+  ctx.rules.set(b.identifier, { read: () => cloneReplacing(model, marker, value) as t.Expression })
+  ctx.resources.set(b.identifier, name)
+}
+
 /** `await` que sobrou fora dos pontos do escopo raiz (ex.: `return <p>{await x}</p>`): sem forma de emitir. */
 function checkStrayAwaits(ctx: BodyContext): void {
   const st = stateOf(ctx)
@@ -318,7 +361,7 @@ export function checkBodyFlow(ctx: BodyContext): void {
   const body = ctx.body!
   const st = stateOf(ctx)
   for (const f of body.flow) {
-    if (f.kind === 'await') registerAwait(ctx, f.node)
+    if (f.kind === 'await') registerAwait(ctx, f.node, f.hoisted)
     if (f.kind === 'return') {
       const s = rootStatementOf(ctx, f.node)
       if (s) st.decisions.add(s)

@@ -33,6 +33,19 @@ describe('diagnósticos', () => {
     expect(r.code).toContain(`template('<p data-jo="A.tsx:1" class="x"></p>')`)
   })
 
+  // W-5 (12): `await` fora das formas de 18 §10 e `await` em `use*` são erros do analyzer
+  test('`await` fora de statement do escopo raiz → await-position-unsupported', () => {
+    const e = fail(`export async function A() {\n  const u = 1\n  return <p>{await f(u)}</p>\n}`)
+    expect(e.id).toBe('await-position-unsupported')
+    expect(e.loc.line).toBe(3)
+  })
+
+  test('`await` em `use*` → await-in-use-unsupported', () => {
+    const e = fail(`export async function useX() {\n  const n = await f()\n  return { n }\n}`, 'useX.ts')
+    expect(e.id).toBe('await-in-use-unsupported')
+    expect(e.loc.line).toBe(2)
+  })
+
   test('sourcemap aponta para o arquivo de entrada', () => {
     const r = compile(`export function A() {\n  return <p>{1 + 1}</p>\n}`, { filename: 'src/A.tsx' })
     expect(r.map?.sources).toEqual(['src/A.tsx'])
@@ -55,28 +68,9 @@ describe('ganchos da parte 2 (not-implemented com loc)', () => {
       /índice de lista/,
     ],
     [
-      '`await` fora de statement do escopo raiz',
-      `export async function A() {\n  const u = 1\n  return <p>{await f(u)}</p>\n}`,
-      3,
-      /`await` fora de um statement/,
-    ],
-    [
-      '`await` dentro de expressão de declaração',
-      `export async function A() {\n  const n = (await f()).length\n  return <p>{n}</p>\n}`,
-      2,
-      /`const x = await …`/,
-    ],
-    [
-      '`await` em `use*`',
-      `export async function useX() {\n  const n = await f()\n  return { n }\n}`,
-      2,
-      /`use\*`/,
-      'useX.ts',
-    ],
-    [
-      // 18 §12 não diz para onde vai o lado sem `<Slot>` de um ternário (lacuna da parte 2b)
-      'filho comum em condicional com <Slot>',
-      `import { Slot } from 'jotastic'\nimport { Card } from './c'\nexport function A({ x }: { x: boolean }) {\n  return <Card>{x ? <Slot name="h"><b /></Slot> : <i />}</Card>\n}`,
+      // U-3 cobre um lado sem `<Slot>` sozinho; junto de outros filhos fora de slot a spec não diz como combinar
+      'filho comum em condicional com <Slot> junto de outros filhos',
+      `import { Slot } from 'jotastic'\nimport { Card } from './c'\nexport function A({ x }: { x: boolean }) {\n  return <Card><p />{x ? <Slot name="h"><b /></Slot> : <i />}</Card>\n}`,
       4,
       /condicional com `<Slot>`/,
     ],

@@ -5,40 +5,9 @@ import * as t from '@babel/types'
 import { compile } from '../src/index'
 import { spec } from './helpers'
 import { SLOTS_INPUT, useFetchInput } from './inputs'
-import { compareSnapshot, replaceStrings, traverse, type AllowEntry } from './snapshot'
-
-/** `signal(` → `state(` nos declaradores `names` e acerta o import do runtime. */
-function signalToState(ast: t.File, names: string[]): boolean {
-  let changed = 0
-  traverse(ast, {
-    VariableDeclarator(p) {
-      const { id, init } = p.node
-      if (!t.isIdentifier(id) || !names.includes(id.name)) return
-      if (!t.isCallExpression(init) || !t.isIdentifier(init.callee, { name: 'signal' })) return
-      init.callee = t.identifier('state')
-      changed++
-    },
-  })
-  let stillUsed = false
-  traverse(ast, {
-    CallExpression(p) {
-      if (t.isIdentifier(p.node.callee, { name: 'signal' })) stillUsed = true
-    },
-  })
-  if (!stillUsed) {
-    const imp = ast.program.body[0] as t.ImportDeclaration
-    imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'signal')
-  }
-  return changed === names.length
-}
+import { compareSnapshot, lazyItemToValue, replaceStrings, traverse, type AllowEntry } from './snapshot'
 
 const ALLOW_03: AllowEntry[] = [
-  {
-    ref: 'A-1 (`signal` vs `state`)',
-    why: 'compiled/03 usa `signal` para `error` (`error = e`) e `matches` (`let matches = mql.matches`); o analyzer segue 18 §3 e classifica os dois como `state` (nenhuma regra sintática reproduz o snapshot)',
-    side: 'expected',
-    apply: (ast) => signalToState(ast, ['error', 'matches']),
-  },
   {
     ref: 'loc de dev (A-7) medido na entrada recortada',
     why: 'o snapshot supõe um arquivo por função (`useMediaQuery.ts:2:9`); aqui os três estão em `useFetch.ts`. `loading`: o valor `data === null && …` está na linha 16, coluna 34 do recorte (o snapshot diz 15:30, que não bate com nenhuma versão do exemplo)',
@@ -48,11 +17,29 @@ const ALLOW_03: AllowEntry[] = [
         'useFetch.ts:15:30': 'useFetch.ts:16:34',
         'useMediaQuery.ts:2:9': 'useFetch.ts:20:9',
         'useMediaQuery.ts:3:7': 'useFetch.ts:21:7',
+        'useMediaQuery.ts:4:3': 'useFetch.ts:22:3',
       }),
+  },
+  {
+    ref: 'K-1(c) / 18 §14 (imports de `jotastic/runtime` gerados por uso)',
+    why: 'compiled/03 importa `signal` sem usá-lo (depois de D60, `error` e `matches` são `state`)',
+    side: 'expected',
+    apply: (ast) => {
+      const imp = ast.program.body[0] as t.ImportDeclaration
+      const before = imp.specifiers.length
+      imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'signal')
+      return imp.specifiers.length !== before
+    },
   },
 ]
 
 const ALLOW_06: AllowEntry[] = [
+  {
+    ref: 'D58 (item de lista lazy) — PARTE DE LISTAS, pendente',
+    why: 'compiled/06 lê o item como `i()`; o compilador ainda passa o item direto. Remover quando D58 entrar',
+    side: 'expected',
+    apply: (ast) => lazyItemToValue(ast),
+  },
   {
     ref: '18 §14 (dev: `data-jo` no elemento raiz do template de cada componente)',
     why: 'compiled/06 foi escrito antes do `data-jo` (como compiled/01)',

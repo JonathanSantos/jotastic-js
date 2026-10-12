@@ -46,7 +46,7 @@ test('parâmetros lazy, getters/setters e memo de retorno', async () => {
   )
   const p = container.querySelector('p')!
   const [inc, zero] = Array.from(container.querySelectorAll('button'))
-  // count = 5; total = 5 + (2 + 1); step = 2; o segundo: start default 10, total = 10 + 5
+  // count = 5; total = 5 + (2 + 1); step = 2; o segundo: `undefined` literal vai cru → start default 10 (D59), total = 10 + 5
   expect(p.textContent).toBe('5|8|2|15')
   inc!.click()
   await tick()

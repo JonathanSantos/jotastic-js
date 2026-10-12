@@ -1,8 +1,8 @@
-import { template, state, memo, signal, listen, insert } from 'jotastic/runtime'
+import { template, _void, state, memo, signal, listen, insert } from 'jotastic/runtime'
 // 18 §4/§11: useX(a, b) → useX(() => a', () => b'); `const u = useX()` (useResult) lido como `u.x`
 import { useImported } from './lib'
 const _t0 = template('<p data-jo="input.tsx:21"><!> <!> <!> <!></p>')
-function useLocal(a, b) {
+function useLocal(a = _void, b = _void) {
   const n = state(a(), {
     name: 'n',
     loc: 'input.tsx:5:7',
@@ -19,11 +19,8 @@ function useLocal(a, b) {
     },
   }
 }
-function useOuter(q) {
-  const inner = useLocal(
-    () => q().length,
-    () => undefined,
-  )
+function useOuter(q = _void) {
+  const inner = useLocal(() => q().length)
   const _value = memo(() => inner.n, {
     name: 'value',
     loc: 'input.tsx:11:19',
@@ -39,10 +36,7 @@ export function Comp(props) {
     name: 'query',
     loc: 'input.tsx:15:7',
   })
-  const local = useLocal(
-    () => props.step * 2,
-    () => undefined,
-  )
+  const local = useLocal(() => props.step * 2)
   const _n = useLocal(
     () => 1,
     () => query.get(),

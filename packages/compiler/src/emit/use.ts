@@ -1,12 +1,12 @@
 /**
  * Funções `use*` (18 §11, 03 §Funções `use*`, 17 §Convenções de emissão).
  *
- * - `compileUseBody(ctx)`: parâmetros posicionais lazy (`p` → `p()`, default `p() ?? d`, desestruturado `_arg0().a`,
- *   rest `args.map((_g) => _g())`), corpo com as regras do componente (§3/§4) e objeto de retorno por propriedade:
+ * - `compileUseBody(ctx)`: parâmetros posicionais lazy (`p` → `p()`; defaults em thunk no callee, D59: `p = _void`,
+ *   `p = () => d`; desestruturado `_arg0().a`; rest `args.map((_g) => _g())`), corpo com as regras do componente (§3/§4) e objeto de retorno por propriedade:
  *   `let` → getter + setter; `const` memo/externo (ou parâmetro) → getter; expressão com leituras reativas → memo
  *   hoisted + getter; função/literal sem leituras → como está.
- * - `emitUseCall(path, ctx)`: `useX(a, b)` → `useX(() => a', () => b')`; quando `useX` é declarada no mesmo módulo,
- *   argumentos ausentes viram `() => undefined` (o corpo chama todo parâmetro).
+ * - `emitUseCall(path, ctx)`: `useX(a, b)` → `useX(() => a', () => b')`; só os argumentos escritos (o callee cobre os
+ *   ausentes com `_void`, D59; `undefined` literal vai cru para o default do callee valer). Spread (`useX(...xs)`) é erro do analyzer (`use-spread-args-unsupported`).
  */
 import * as t from '@babel/types'
 import type { NodePath } from '@babel/traverse'
@@ -53,10 +53,15 @@ function paramLeaves(
   } else ctx.mod.notImplemented(pattern, 'padrão de parâmetro de `use*`')
 }
 
-/** Regras dos parâmetros posicionais (18 §11) e troca dos padrões por um identificador simples. */
+/**
+ * Regras dos parâmetros posicionais (18 §11, D59): todo parâmetro é getter e o callee se protege com defaults em
+ * thunk: sem default → `p = _void`; com default → `p = () => d`. Padrões viram um identificador simples (`_arg0`).
+ */
 function setupUseParams(ctx: BodyContext): void {
   const fn = ctx.fn!
   const scope = fn.scope
+  const thunkDefault = (id: t.Identifier, def: t.Expression | null): t.AssignmentPattern =>
+    t.assignmentPattern(id, def ? arrow(def) : ctx.mod.helper('_void'))
   fn.node.params = fn.node.params.map((param) => {
     if (t.isRestElement(param)) {
       // `...args` → array de getters; leitura de `args` devolve os valores atuais
@@ -75,30 +80,20 @@ function setupUseParams(ctx: BodyContext): void {
     if (t.isIdentifier(pattern)) {
       const name = pattern.name
       const b = scope.getBinding(name)
-      if (b)
-        ctx.rules.set(b.identifier, {
-          read: () => {
-            const call = t.callExpression(gid(name), [])
-            return def ? t.logicalExpression('??', call, t.cloneNode(def, true)) : call
-          },
-        })
-      return def ? t.identifier(name) : param
+      if (b) ctx.rules.set(b.identifier, { read: () => t.callExpression(gid(name), []) })
+      return thunkDefault(pattern, def)
     }
     if (!t.isObjectPattern(pattern) && !t.isArrayPattern(pattern))
       return ctx.mod.notImplemented(param, 'parâmetro de `use*`')
-    // `({ a, b } = d)` → `_arg0`; `a` → `(_arg0() ?? d).a`
+    // `({ a, b } = d)` → `_arg0 = () => d`; `a` → `_arg0().a`
     const name = ctx.name('_arg', true)
-    const base = (): t.Expression => {
-      const call = t.callExpression(gid(name), [])
-      return def ? t.logicalExpression('??', call, t.cloneNode(def, true)) : call
-    }
     const out: Array<{ id: t.Identifier; access: () => t.Expression }> = []
-    paramLeaves(ctx, pattern, base, out)
+    paramLeaves(ctx, pattern, () => t.callExpression(gid(name), []), out)
     for (const leaf of out) {
       const b = scope.getBinding(leaf.id.name)
       if (b) ctx.rules.set(b.identifier, { read: leaf.access })
     }
-    return gid(name)
+    return thunkDefault(gid(name), def)
   })
 }
 
@@ -265,27 +260,15 @@ export function compileUseBody(ctx: BodyContext): void {
 
 // ─── Chamadas ────────────────────────────────────────────────────────────────
 
-/** Número de parâmetros posicionais de uma `use*` declarada no mesmo módulo (sem rest), ou `null`. */
-function localArity(path: NodePath<t.CallExpression>, name: string): number | null {
-  const b = path.scope.getBinding(name)
-  if (!b) return null
-  let fn: t.Node | null | undefined = null
-  if (b.path.isFunctionDeclaration()) fn = b.path.node
-  else if (b.path.isVariableDeclarator()) fn = b.path.node.init
-  if (!fn || !t.isFunction(fn)) return null
-  if (fn.params.some((p) => t.isRestElement(p))) return null
-  return fn.params.length
-}
-
 /** `useX(a, b)` → `useX(() => a, () => b)`: as reescritas de §4 entram nos thunks na continuação da travessia. */
 export function emitUseCall(path: NodePath<t.CallExpression>, ctx: BodyContext): void {
-  const callee = path.node.callee as t.Identifier
   const args = path.node.arguments
   if (args.some((a) => t.isSpreadElement(a) || t.isArgumentPlaceholder(a))) {
     return ctx.mod.notImplemented(path.node, 'spread em argumentos de chamada a `use*`')
   }
-  const out: t.Expression[] = (args as t.Expression[]).map((a) => arrow(a))
-  const arity = localArity(path, callee.name)
-  if (arity != null) while (out.length < arity) out.push(arrow(t.identifier('undefined')))
-  path.node.arguments = out
+  // `undefined` literal vai cru: o default do callee (`p = _void` / `p = () => d`) se aplica, como em JS
+  const isUndefined = (a: t.Expression) =>
+    (t.isIdentifier(a, { name: 'undefined' }) && !path.scope.getBinding('undefined')) ||
+    (t.isUnaryExpression(a, { operator: 'void' }) && t.isNumericLiteral(a.argument))
+  path.node.arguments = (args as t.Expression[]).map((a) => (isUndefined(a) ? t.identifier('undefined') : arrow(a)))
 }

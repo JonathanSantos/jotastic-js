@@ -3,9 +3,9 @@
 // compiled.test.ts (ver snapshot.ts). Cada divergência conhecida está na allowlist, citando a pendência.
 import { describe, test } from 'vitest'
 import * as t from '@babel/types'
-import { compile, CompileError } from '../src/index'
+import { compile } from '../src/index'
 import { spec } from './helpers'
-import { compareSnapshot, replaceStrings, traverse, type AllowEntry } from './snapshot'
+import { compareSnapshot, lazyItemToValue, replaceStrings, textToInsert, traverse, type AllowEntry } from './snapshot'
 
 const dataJo: AllowEntry = {
   ref: '18 §14 (dev: `data-jo` no elemento raiz do template de cada componente)',
@@ -25,33 +25,6 @@ const dataJo: AllowEntry = {
     })
     return changed
   },
-}
-
-/** `signal(` → `state(` nos declaradores `names` (A-1). */
-function signalToState(ast: t.File, names: string[]): boolean {
-  let changed = 0
-  traverse(ast, {
-    VariableDeclarator(p) {
-      const { id, init } = p.node
-      if (!t.isIdentifier(id) || !names.includes(id.name)) return
-      if (!t.isCallExpression(init) || !t.isIdentifier(init.callee, { name: 'signal' })) return
-      init.callee = t.identifier('state')
-      changed++
-    },
-  })
-  const imp = ast.program.body.find(
-    (s): s is t.ImportDeclaration => t.isImportDeclaration(s) && s.source.value === 'jotastic/runtime',
-  )!
-  let used = false
-  traverse(ast, {
-    CallExpression(p) {
-      if (t.isIdentifier(p.node.callee, { name: 'signal' })) used = true
-    },
-  })
-  if (!used) imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'signal')
-  if (!imp.specifiers.some((s) => s.local.name === 'state'))
-    imp.specifiers.push(t.importSpecifier(t.identifier('state'), t.identifier('state')))
-  return changed === names.length
 }
 
 /** `() => { const _el = _tN(); return _el }` → `() => _tN()` (o lado `actual` vira a forma curta do snapshot). */
@@ -82,39 +55,16 @@ const ALLOW_02: AllowEntry[] = [
   dataJo,
   staticTemplateArrow,
   {
-    ref: 'K-1(c) / 18 §14 (imports de `jotastic/runtime` gerados por uso)',
-    why: 'compiled/02 importa `bool` sem usá-lo',
+    ref: 'D58 (item de lista lazy) — PARTE DE LISTAS, pendente',
+    why: 'compiled/02 lê o item como `todo()`/`f()`; o compilador ainda passa o item direto. Remover quando D58 entrar',
     side: 'expected',
-    apply: (ast) => {
-      const imp = ast.program.body[0] as t.ImportDeclaration
-      const before = imp.specifiers.length
-      imp.specifiers = imp.specifiers.filter((s) => s.local.name !== 'bool')
-      return imp.specifiers.length !== before
-    },
+    apply: (ast) => lazyItemToValue(ast),
   },
   {
-    ref: 'A-1 (`signal` vs `state`)',
-    why: '`filter = f` (f é parâmetro, não "provavelmente primitivo"): o analyzer segue 18 §3 e emite `state`; compiled/02 usa `signal`',
+    ref: 'D64 (`text(marker, read)` para escalares) — PARTE DE LISTAS/`text`, pendente',
+    why: 'compiled/02 emite `text(…)`; o compilador ainda emite `insert`. Remover quando D64 entrar',
     side: 'expected',
-    apply: (ast) => signalToState(ast, ['filter']),
-  },
-  {
-    ref: '18 §7 (`{a ? X : Y}` → `[() => !!a, …]`)',
-    why: 'compiled/02 escreve `() => todo.editing`; o compilador segue a tabela de 18 §7 (`!!` quando a condição não é sintaticamente booleana, como `!!user.error` em compiled/04)',
-    side: 'expected',
-    apply: (ast) => {
-      let changed = false
-      traverse(ast, {
-        ArrowFunctionExpression(p) {
-          const b = p.node.body
-          if (!t.isMemberExpression(b) || !t.isIdentifier(b.property, { name: 'editing' })) return
-          if (!p.parentPath.isArrayExpression() || p.key !== 0) return
-          p.node.body = t.unaryExpression('!', t.unaryExpression('!', b))
-          changed = true
-        },
-      })
-      return changed
-    },
+    apply: (ast) => textToInsert(ast),
   },
   {
     ref: 'loc 1-based (A-7) medido no exemplo',
@@ -160,28 +110,6 @@ export function UserPage({ id }: { id: string }) {
 const ALLOW_04: AllowEntry[] = [
   dataJo,
   {
-    ref: 'A-1 (`signal` vs `state`)',
-    why: '`tab = t` (t é parâmetro): o analyzer segue 18 §3 e emite `state`; compiled/04 usa `signal`',
-    side: 'expected',
-    apply: (ast) => signalToState(ast, ['tab']),
-  },
-  {
-    ref: '18 §11 (`useX(a, b)` → um getter por argumento escrito)',
-    why: 'compiled/04 passa `() => undefined` para o `opts` omitido de `useFetch`; o compilador não conhece a aridade de uma função importada',
-    side: 'expected',
-    apply: (ast) => {
-      let changed = false
-      traverse(ast, {
-        CallExpression(p) {
-          if (!t.isIdentifier(p.node.callee, { name: 'useFetch' }) || p.node.arguments.length !== 2) return
-          p.node.arguments.pop()
-          changed = true
-        },
-      })
-      return changed
-    },
-  },
-  {
     ref: 'loc 1-based (A-7) medido na entrada',
     why: 'o comentário de compiled/04 não traz imports nem indentação fixa; os `loc` medidos em USER_PAGE_INPUT diferem',
     side: 'expected',
@@ -196,25 +124,13 @@ const ALLOW_04: AllowEntry[] = [
   },
 ]
 
-/** O 04 depende de `use*` (parte 2b): enquanto `useFetch(…)` lançar `not-implemented`, o teste fica pendente. */
-function compiles(code: string, filename: string): boolean {
-  try {
-    compile(code, { filename, dev: true })
-    return true
-  } catch (e) {
-    if (e instanceof CompileError && e.id === 'not-implemented') return false
-    throw e
-  }
-}
-
 describe('compiled/ (snapshots de referência, parte 2a)', () => {
   test('02-todos', async () => {
     const actual = compile(spec('examples/02-todos.tsx'), { filename: 'Todos.tsx', dev: true }).code
     await compareSnapshot(actual, spec('compiled/02-todos.js'), ALLOW_02)
   })
 
-  const ready04 = compiles(USER_PAGE_INPUT, 'UserPage.tsx')
-  ;(ready04 ? test : test.todo)('04-user-page (precisa de `use*`, parte 2b)', async () => {
+  test('04-user-page', async () => {
     const actual = compile(USER_PAGE_INPUT, { filename: 'UserPage.tsx', dev: true }).code
     await compareSnapshot(actual, spec('compiled/04-user-page.js'), ALLOW_04)
   })

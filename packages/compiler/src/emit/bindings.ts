@@ -448,7 +448,7 @@ function rewriteCall(p: NodePath<t.CallExpression>, ctx: BodyContext): void {
 
 /** Aplica 18 §4 em todo o corpo (inclusive closures), respeitando sombreamento. */
 export function rewriteBody(ctx: BodyContext): void {
-  ctx.fn!.get('body').traverse({
+  const visitor: Parameters<NodePath['traverse']>[0] = {
     Identifier(p) {
       if (isGenerated(p.node) || !p.isReferencedIdentifier()) return
       const rule = ctx.ruleFor(p, p.node.name)
@@ -466,7 +466,10 @@ export function rewriteBody(ctx: BodyContext): void {
     CallExpression(p) {
       rewriteCall(p, ctx)
     },
-  })
+  }
+  ctx.fn!.get('body').traverse(visitor)
+  // defaults de parâmetros de `use*` (D59: `b = () => a` lê outro parâmetro → `() => a()`)
+  if (ctx.body!.kind === 'use') for (const param of ctx.fn!.get('params')) param.traverse(visitor)
 }
 
 // ─── Declarações (18 §3 → runtime) ──────────────────────────────────────────

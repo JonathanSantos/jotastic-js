@@ -277,3 +277,6 @@ Lacunas e conflitos encontrados durante a implementação, com o caso concreto e
 | Z-13 | Efeito interno do `selector` marcado `quiet` (fora de `counts().effects`) para F17 dar 2 | assim |
 | Z-14 | `selector` com `equals` custom varre todas as chaves (O(linhas) comparações; só marca as que mudaram) | assim |
 | Z-15 | `Slot.where()`: slots de linhas leem o pai atual do marker (necessário para `list(null, …)`) | assim |
+| Z-16 | Linha do `data-jo`: compiled/01 usa a linha da função (`Counter.tsx:4`); o compilador usa a do elemento raiz (14) | compilador mantido; allowlist. Decidir |
+| Z-17 | D59: argumento `undefined` em runtime (não literal) não cai no default do callee (`p() ?? d` antigo cobria); `undefined` literal é passado cru | assim |
+| Z-18 | U-3 combinado com outros filhos fora de slot | `not-implemented` |

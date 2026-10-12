@@ -246,6 +246,55 @@ test('`await` sem declarador, `Promise.all` desestruturado e estado do setup que
   expect(btn.textContent).toBe('A2+B2:1')
 })
 
+test('W-5: `await` içado (`(await e).y`, `f(await e)`): valor derivado vivo, refaz com a prop, `pending` do recurso', async () => {
+  const id = signal('1')
+  const m = await load<Record<string, Comp>>(
+    withShims(
+      `import { pending } from 'jotastic'\nimport { api } from './lib/api'\n` +
+        `export async function Hoist({ id }: { id: string }) {
+          let n = 0
+          const name = (await api.user(id)).name
+          const label = shout(await api.user(id + '-b'), n)
+          return <p class={{ dim: pending(name) }} onClick={() => n++}>{name}|{label}</p>
+        }
+        function shout(u: { name: string }, n: number) {
+          return u.name.toUpperCase() + n
+        }`,
+    ),
+    'Hoist.tsx',
+  )
+  const c = render(() =>
+    component(m.Hoist!, {
+      get id() {
+        return id.get()
+      },
+    }),
+  ).container
+  expect(requests.map((r) => r.id)).toEqual(['1'])
+  requests[0]!.resolve({ id: '1', name: 'Ana' })
+  await settle()
+  expect(requests.map((r) => r.id)).toEqual(['1', '1-b'])
+  requests[1]!.resolve({ id: '1-b', name: 'bia' })
+  await settle()
+  const p = c.querySelector('p')!
+  expect(p.textContent).toBe('Ana|BIA0')
+  p.click() // `n` (signal do setup) é lido no inicializador içado: o texto acompanha
+  await tick()
+  expect(p.textContent).toBe('Ana|BIA1')
+
+  id.set('2')
+  await tick()
+  expect(p.classList.contains('dim')).toBe(true)
+  requests[2]!.resolve({ id: '2', name: 'Caio' })
+  await settle()
+  expect(p.classList.contains('dim')).toBe(false)
+  expect(p.textContent).toBe('Caio|BIA1')
+  requests[3]!.resolve({ id: '2-b', name: 'duda' })
+  await settle()
+  expect(c.querySelector('p')).toBe(p)
+  expect(p.textContent).toBe('Caio|DUDA1')
+})
+
 describe('diagnósticos de `await` (analyzer)', () => {
   const fail = (code: string): string => {
     try {

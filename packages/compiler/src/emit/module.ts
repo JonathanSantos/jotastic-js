@@ -108,12 +108,24 @@ function unusedMarkerImports(program: NodePath<t.Program>): NodePath<t.ImportSpe
   return out
 }
 
-function runtimeImport(mod: ModuleContext): t.ImportDeclaration {
-  const order = [...mod.helpers.keys()].sort((a, b) => (a === 'template' ? -1 : b === 'template' ? 1 : 0))
-  return t.importDeclaration(
-    order.map((name) => t.importSpecifier(gid(mod.helpers.get(name)!), t.identifier(name))),
-    t.stringLiteral('jotastic/runtime'),
-  )
+/** Helpers internos de HMR vêm do subpath dev-only `jotastic/runtime/hmr` (D65); o resto, de `jotastic/runtime`. */
+const isHmrHelper = (name: string): boolean => name.startsWith('__hmr')
+
+function runtimeImports(mod: ModuleContext): t.ImportDeclaration[] {
+  const names = [...mod.helpers.keys()]
+  const runtime = names
+    .filter((n) => !isHmrHelper(n))
+    .sort((a, b) => (a === 'template' ? -1 : b === 'template' ? 1 : 0))
+  const hmr = names.filter(isHmrHelper)
+  const decl = (list: string[], source: string) =>
+    t.importDeclaration(
+      list.map((name) => t.importSpecifier(gid(mod.helpers.get(name)!), t.identifier(name))),
+      t.stringLiteral(source),
+    )
+  const out: t.ImportDeclaration[] = []
+  if (runtime.length) out.push(decl(runtime, 'jotastic/runtime'))
+  if (hmr.length) out.push(decl(hmr, 'jotastic/runtime/hmr'))
+  return out
 }
 
 /**
@@ -268,6 +280,6 @@ export function transformProgram(program: NodePath<t.Program>, analysis: Analysi
     if (t.isImportDeclaration(s)) last = i
   })
   body.splice(last + 1, 0, ...mod.templateDecls)
-  if (mod.helpers.size) body.unshift(runtimeImport(mod))
+  if (mod.helpers.size) body.unshift(...runtimeImports(mod))
   return analysis.diagnostics
 }

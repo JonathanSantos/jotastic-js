@@ -7,7 +7,19 @@ import type { NodePath } from '@babel/traverse'
 import { isGenerated, type BodyContext } from '../context'
 import { childrenOf, type Child } from './template'
 import { childValue } from './flow'
-import { arrow, attrName, getter, importedName, isDynamic, isJSX, isLiteralValue, jsxName, propKey } from './util'
+import {
+  arrow,
+  attrName,
+  getter,
+  importedName,
+  isDynamic,
+  isIntrinsic,
+  isJSX,
+  isLiteralValue,
+  jsxName,
+  propKey,
+  some,
+} from './util'
 
 /** `Comp`, `Tabs.Tab`, `props.as`: expressão do componente, com a reescrita de §4 (prop desestruturada `As`). */
 function calleeOf(path: NodePath<t.JSXElement>, ctx: BodyContext): t.Expression {
@@ -23,9 +35,24 @@ function calleeOf(path: NodePath<t.JSXElement>, ctx: BodyContext): t.Expression 
   return toExpr(path.node.openingElement.name)
 }
 
-/** Valor de uma prop (18 §6): literal/função → valor; JSX ou leitura dinâmica → getter. */
-function propEntry(key: string, value: t.Expression): t.ObjectProperty | t.ObjectMethod {
-  if (isJSX(value) || (!isLiteralValue(value) && !t.isFunction(value) && isDynamic(value))) return getter(key, value)
+/**
+ * K-5 (18 §6): a expressão lê um `let` do usuário (fora de funções aninhadas)? Ex.: `let` de `ref` passado como prop:
+ * o valor muda depois da criação, então vira getter. `let` reativos já viraram `x.get()` na reescrita de §4.
+ */
+function readsLet(value: t.Expression, scope: NodePath['scope']): boolean {
+  return some(value, (n) => {
+    if (!t.isIdentifier(n) || isGenerated(n)) return false
+    return scope.getBinding(n.name)?.kind === 'let'
+  })
+}
+
+/** Valor de uma prop (18 §6): literal/função → valor; JSX, leitura dinâmica ou `let` (K-5) → getter. */
+function propEntry(key: string, value: t.Expression, scope?: NodePath['scope']): t.ObjectProperty | t.ObjectMethod {
+  if (
+    isJSX(value) ||
+    (!isLiteralValue(value) && !t.isFunction(value) && (isDynamic(value) || (!!scope && readsLet(value, scope))))
+  )
+    return getter(key, value)
   const shorthand = t.isIdentifier(value) && value.name === key
   return t.objectProperty(propKey(key), value, false, shorthand)
 }
@@ -121,6 +148,40 @@ function slotEntry(path: NodePath<t.JSXElement>, conds: t.Expression[], ctx: Bod
 }
 
 /**
+ * `default` dos slots: os filhos fora de `<Slot>`. U-3 (18 §12): o lado sem `<Slot>` de um condicional entra com o
+ * getter complementar (`get default() { return x ? () => null : () => <i/> }`). Só um lado assim, sem outros filhos
+ * fora de slot (a combinação não está na spec).
+ */
+function defaultSlot(
+  rest: Child[],
+  conditional: Array<{ conds: t.Expression[]; child: Child }>,
+  ctx: BodyContext,
+): t.ObjectProperty | t.ObjectMethod {
+  if (!conditional.length) return t.objectProperty(t.identifier('default'), renderFn(rest, ctx))
+  const [only, ...more] = conditional
+  if (more.length || rest.length) {
+    const c = (more[0] ?? only!).child
+    return ctx.mod.notImplemented(
+      'path' in c ? c.path.node : ctx.fn!.node,
+      'filho comum em condicional com `<Slot>` junto de outros filhos fora de slot',
+    )
+  }
+  const fn = renderFn([only!.child], ctx)
+  const empty = arrow(t.nullLiteral())
+  const { conds } = only!
+  // `!x` gerado para o lado `alternate` → forma complementar da spec: `x ? () => null : fn`
+  const value =
+    conds.length === 1 && t.isUnaryExpression(conds[0], { operator: '!' })
+      ? t.conditionalExpression((conds[0] as t.UnaryExpression).argument, empty, fn)
+      : t.conditionalExpression(
+          conds.reduce((a, b) => t.logicalExpression('&&', a, b)),
+          fn,
+          empty,
+        )
+  return t.objectMethod('get', t.identifier('default'), [], t.blockStatement([t.returnStatement(value)]))
+}
+
+/**
  * Children de componente com `<Slot>` (18 §12) → `{ [SLOTS]: true, default, n1, get n2() { … } }`. Os filhos que
  * não estão em `<Slot>` formam `default`.
  */
@@ -128,6 +189,7 @@ function slotsEntry(children: Child[], ctx: BodyContext): t.ObjectProperty {
   const mod = ctx.mod
   const entries: SlotEntry[] = []
   const rest: Child[] = []
+  const conditionalDefaults: Array<{ conds: t.Expression[]; child: Child }> = []
   const scan = (path: NodePath, conds: t.Expression[]): void => {
     if (path.isJSXElement() && isSlotElement(path)) {
       entries.push(slotEntry(path, conds, ctx))
@@ -155,8 +217,12 @@ function slotsEntry(children: Child[], ctx: BodyContext): t.ObjectProperty {
       return
     }
     if (isEmptyValue(path.node)) return
-    // `a ? <Slot name="x"/> : <p/>`: o lado sem slot precisaria ir para `default` sob a condição inversa
-    mod.notImplemented(path.node, 'filho comum dentro de condicional com `<Slot>`')
+    // U-3: `a ? <Slot name="x"/> : <p/>` → o lado sem slot vai para `default` sob a condição complementar
+    const child: Child = path.isJSXElement()
+      ? { kind: isIntrinsic(path.node.openingElement.name) ? 'element' : 'component', path }
+      : { kind: 'expression', path: path as NodePath<t.Expression> }
+    if (!conds.length) rest.push(child)
+    else conditionalDefaults.push({ conds, child })
   }
   for (const c of children) {
     if (isSlot(c)) entries.push(slotEntry(c.path, [], ctx))
@@ -166,7 +232,7 @@ function slotsEntry(children: Child[], ctx: BodyContext): t.ObjectProperty {
 
   const props: Array<t.ObjectProperty | t.ObjectMethod> = [
     t.objectProperty(mod.helper('SLOTS'), t.booleanLiteral(true), true),
-    t.objectProperty(t.identifier('default'), renderFn(rest, ctx)),
+    defaultSlot(rest, conditionalDefaults, ctx),
   ]
   // mesmo nome em mais de um `<Slot>` (ex.: ternário): o primeiro cuja condição vale
   const byName = new Map<string, SlotEntry[]>()
@@ -227,7 +293,7 @@ function childrenEntryOf(path: NodePath<t.JSXElement>, ctx: BodyContext): t.Obje
       // K-14: condicional com JSX → `get children() { return branches(…) }` (o mesmo valor de um filho de elemento)
       const v = childValue(c.path, ctx)
       if (t.isCallExpression(v) && isGenerated(v.callee)) return getter('children', v)
-      return propEntry('children', e)
+      return propEntry('children', e, c.path.scope)
     }
     return getter('children', c.path.node)
   }
@@ -241,6 +307,12 @@ function childrenEntryOf(path: NodePath<t.JSXElement>, ctx: BodyContext): t.Obje
     return c.path.node
   })
   return getter('children', t.arrayExpression(items))
+}
+
+/** `<X.Provider>` (Provider de contexto, `createContext`). */
+function isProvider(path: NodePath<t.JSXElement>): boolean {
+  const name = path.node.openingElement.name
+  return t.isJSXMemberExpression(name) && name.property.name === 'Provider'
 }
 
 /**
@@ -278,7 +350,9 @@ export function compileComponent(path: NodePath<t.JSXElement>, ctx: BodyContext)
       continue
     }
     if (name === 'ref') return mod.error(a, 'component-ref-unsupported', '`ref` em componente ainda não é suportado.')
-    ;(current ??= []).push(propEntry(name, value))
+    // I-3 (18 §4/§6): `<Ctx.Provider value={x}>` → `get value()` sempre; o Provider faz `provide(ctx, () => props.value)`
+    if (name === 'value' && isProvider(path)) (current ??= []).push(getter(name, value))
+    else (current ??= []).push(propEntry(name, value, path.scope))
   }
   const children = childrenEntry(path, ctx)
   if (children) (current ??= []).push(children)
