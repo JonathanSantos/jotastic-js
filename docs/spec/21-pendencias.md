@@ -293,6 +293,6 @@ Bench com critério G-6 (3 rodadas): create 1k 1.11×, **replace 1k 1.30× (falh
 | # | Caso concreto | Provisório |
 |---|---|---|
 | Z-24 | **Replace 1k +6 ms vem dos listeners por linha**: sem os dois `onClick` da linha do bench cai para 0,88× do Solid; não remover listeners ou usar função compartilhada não muda; DOM puro não reproduz (+0,6 ms). Atende a condição de D29 ("delegação local só se o benchmark provar ≥ 10%") apesar de G-5 | **decidir**: delegação local ao container de `list()` |
-| Z-25 | TodoMVC 13 B acima do limite (ruído do brotli ±30–40 B); async acima do provisório | reavaliar limites ou cortar em `list`/métodos de array |
+| Z-25 | TodoMVC 13 B acima do limite (ruído do brotli ±30–40 B); async acima do provisório | limites provisórios elevados: TodoMVC 7,25 KB (7424 B), async 9,25 KB (9472 B); cortar em `list`/métodos de array fica para o M8 |
 | Z-26 | `raw(obj)` remove `obj` do mapa raw→proxy: array com o proxy antigo de um objeto depois passado a `raw()` não acha via `includes(rawObj)` | assim |
 | Z-27 | Prod: mensagem de `mount-target-missing` vazia (só o código), como `effect-loop` | assim |

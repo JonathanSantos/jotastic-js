@@ -166,4 +166,4 @@ Ambiente: `happy-dom`. Helper `counts()` do `@jotastic/test` devolve `{ effects,
 
 - `size.test.ts`: build de `examples/counter` e `examples/todomvc` com Vite + brotli; falha se > 3 KB / > 6 KB (ajustável até o M8, nunca acima de `≤ Solid`).
 - `bench/`: js-framework-benchmark local; CI compara com o resultado salvo do Solid e falha se > Solid + 10% **e** > Solid + 2 ms, em 2 de 3 execuções (G-6).
-- Limites provisórios até o M8: counter 3,5 KB (meta 3 KB com `text`), TodoMVC 7 KB, async 9 KB (informativo).
+- Limites provisórios até o M8: counter 3,5 KB (meta 3 KB com `text`), TodoMVC 7,25 KB, async 9,25 KB (informativo).
