@@ -6,6 +6,11 @@
 </picture>
 
 <p>
+  <a href="https://github.com/JonathanSantos/jotastic-js/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/JonathanSantos/jotastic-js/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/JonathanSantos/jotastic-js/actions/workflows/release.yml"><img alt="Release" src="https://img.shields.io/github/actions/workflow/status/JonathanSantos/jotastic-js/release.yml?style=flat-square&label=release"></a>
+  <a href="https://www.npmjs.com/package/jotastic"><img alt="npm" src="https://img.shields.io/npm/v/jotastic?style=flat-square&color=CB3837"></a>
+  <a href="https://www.npmjs.com/package/jotastic?activeTab=versions"><img alt="npm next" src="https://img.shields.io/npm/v/jotastic/next?style=flat-square&label=npm%40next&color=CB3837"></a>
+  <br>
   <img alt="status: pré-lançamento" src="https://img.shields.io/badge/status-pr%C3%A9--lan%C3%A7amento-FF5B3A?style=flat-square">
   <img alt="runtime sem dependências" src="https://img.shields.io/badge/runtime-0%20deps-16131B?style=flat-square">
   <img alt="counter em 3,4 KB brotli" src="https://img.shields.io/badge/counter-~3%2C4%20KB%20brotli-FFC94A?style=flat-square&labelColor=16131B">
