@@ -3,6 +3,11 @@ on:
   push:
     tags: ['v*']
 
+# Releases nunca rodam em paralelo (nem se cancelam).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write # GitHub Release
   id-token: write # provenance do npm
@@ -11,8 +16,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm, registry-url: 'https://registry.npmjs.org' }
       - run: npm ci
       - name: Versão da tag
@@ -25,7 +30,7 @@ jobs:
       - run: node scripts/set-version.mjs ${{ steps.v.outputs.version }}
       - run: npm run build
       - run: npm test
-      - run: npm run size
+      - run: npm run size:only
       # `-w packages`: só os pacotes publicáveis (exemplos e bench não têm versão).
       - run: npm publish -w packages --tag ${{ steps.v.outputs.dist }}
         env:

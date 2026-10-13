@@ -15,14 +15,15 @@
     "bench"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w packages && npm run build -w examples -w bench --ignore-scripts",
     "test": "npm run test --workspaces --if-present",
     "test:watch": "vitest",
     "dev": "npm run dev -w examples/counter",
-    "size": "npm run size --workspaces --if-present",
+    "size": "npm run build -w packages && npm run size:only",
     "bench": "npm run bench -w bench --",
     "lint": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "size:only": "npm run size -w examples --if-present --ignore-scripts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
