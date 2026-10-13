@@ -20,7 +20,7 @@
 
 **Você escreve componentes como funções TypeScript comuns.<br>O compilador gera os signals, a memoização e as atualizações do DOM, nó por nó.**
 
-[Começar](#-começar) · [Como funciona](#-como-funciona) · [Vindo do React](#-vindo-do-react) · [Pacotes](#-pacotes) · [Spec](docs/spec/README.md)
+[Começar](#-começar) · [Features](#-features) · [Como funciona](#-como-funciona) · [Técnicas](#-técnicas-aplicadas) · [Vindo do React](#-vindo-do-react) · [Pacotes](#-pacotes) · [Spec](docs/spec/README.md)
 
 </div>
 
@@ -65,6 +65,15 @@ Sem `useState`, `useMemo`, `useCallback`, `useEffect`, array de dependências ou
 
 <br>
 
+## ✦ Features
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/features-dark.svg">
+  <img alt="Roda uma vez; reatividade por nó; async nativo com abort e Boundary; stores sem seletor; listas com chave e LIS; TSX válido; devtools e HMR; testes de custo com counts()" src="brand/features-light.svg" width="100%">
+</picture>
+
+<br>
+
 ## ✦ Como funciona
 
 <picture>
@@ -86,6 +95,11 @@ O compilador lê o componente uma vez e classifica cada declaração:
 | `({ user })` nas props | leitura lazy | só o binding que lê `user` |
 
 O template é **clonado** e cada parte dinâmica vira um binding com referência direta ao nó real. Atualizar é escrever no nó. Não existe árvore a comparar.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/compare-dark.svg">
+  <img alt="À esquerda, com re-render e VDOM, os sete componentes rodam de novo e a árvore é comparada; à direita, no Jotastic, nenhum componente roda e só os dois nós de texto que mudaram são escritos" src="brand/compare-light.svg" width="100%">
+</picture>
 
 <details>
 <summary><b>Veja o que o compilador gera para o Counter</b></summary>
@@ -123,17 +137,76 @@ Uma saída legível é requisito do projeto: nomes `_t0`, `_el`, `_m0`, imports 
 
 <br>
 
+## ✦ Técnicas aplicadas
+
+### Compilador: o trabalho acontece no build
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/pipeline-dark.svg">
+  <img alt="Pipeline: Counter.tsx, parse com Babel e remoção de tipos, analyzer que classifica cada declaração, emit de template e bindings, saída JS com sourcemap; o plugin ESLint e o plugin Vite usam as mesmas peças" src="brand/pipeline-light.svg" width="100%">
+</picture>
+
+- **Um analyzer, três consumidores.** A classificação (`signal`, `state`, `memo`, `resource`, `effect`, `plain`) é a mesma no compilador, no plugin ESLint e nos diagnósticos do Vite. O que o editor sublinha é exatamente o que o build faria.
+- **Template içado.** O HTML estático vira um `template()` no topo do módulo e é clonado por instância. Os nós dinâmicos são resolvidos uma vez por `firstChild`/`nextSibling`, sem `querySelector`.
+- **Saída legível.** Nomes `_t0`, `_el`, `_m0`, imports nomeados e nenhuma IIFE. Snapshots de referência em [`docs/spec/compiled`](docs/spec/compiled) garantem isso.
+
+### Reatividade push-pull com coloração
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/reactive-dark.svg">
+  <img alt="count muda de 4 para 6: double recalcula e muda, isEven recalcula e continua true, então o classList não roda; só os dois nós de texto são escritos" src="brand/reactive-light.svg" width="100%">
+</picture>
+
+- **Push** marca: `set()` pinta de `DIRTY` os observadores diretos e de `CHECK` os que dependem via `memo`.
+- **Pull** confirma: um nó `CHECK` pergunta às fontes se mudaram de fato. Se nenhuma mudou, volta a `CLEAN` sem rodar. Um derivado que dá o mesmo resultado corta a propagação.
+- **Flush ordenado**: efeitos de render antes dos de usuário, por id. Uma decisão (branch, lista) roda antes do conteúdo que ela renderiza, e bindings de um owner descartado são pulados.
+
+### Objetos reativos: proxy profundo e lazy
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/proxy-dark.svg">
+  <img alt="Proxy lazy: o array tem signals $iter e length; cada item vira proxy só quando é lido; todos[1].done = false notifica só o binding do checkbox da linha 2; push notifica $iter e a lista cria uma linha" src="brand/proxy-light.svg" width="100%">
+</picture>
+
+- O alvo guarda sempre valores **raw**. O proxy de um filho só nasce quando ele é lido, e o signal de uma chave só nasce quando alguém observa.
+- Métodos de iteração de array assinam um único signal estrutural (`$iter`), não um por índice. Mutadores rodam no raw dentro de `batch` e notificam só os índices afetados.
+- O estado do proxy é o próprio handler: sem `WeakMap` extra por objeto nem consulta a cada leitura.
+
+### Listas com chave e `selector`
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/lists-dark.svg">
+  <img alt="Reconciliação: A, B, C e E estão na maior subsequência crescente e ficam parados; D é movido com insertBefore; F é criado; G é descartado. Com selector, trocar a seleção de 2 para 5 marca só as duas linhas" src="brand/lists-light.svg" width="100%">
+</picture>
+
+- Prefixo e sufixo comuns, `Map<chave, posição>` e **maior subsequência crescente (LIS)**: só as linhas fora dela são movidas, sempre o mesmo nó (`insertBefore`), nunca recriado.
+- Chave igual com referência nova atualiza o signal da linha; nós e bindings são preservados.
+- `selector` assina **por valor** (`Map<valor, observadores>`). Mudar a seleção numa lista de 10 mil linhas marca duas.
+
+### Async como recurso
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/async-dark.svg">
+  <img alt="Linha do tempo: id 1 carrega Ana; id 2 dispara uma requisição que é abortada quando id vira 3; a tela mantém Ana com pending(user) até Caio chegar" src="brand/async-light.svg" width="100%">
+</picture>
+
+- `await` no corpo do componente vira um recurso: refaz quando o que ele lê muda e **aborta** a requisição anterior via `AbortSignal`.
+- `<Boundary>` mostra `pending` só na primeira carga. Depois, o conteúdo antigo fica na tela, e `pending(user)` permite indicar o recarregamento sem piscar.
+- Erros de setup, de handlers async e de recursos sobem até o `<Boundary error>` mais próximo, com `retry`.
+
+<br>
+
 ## ✦ Começar
 
 ```bash
-npm create jotastic@latest meu-app
+npm create jotastic@next meu-app
 cd meu-app && npm install && npm run dev
 ```
 
 O template vem com Vite, TypeScript strict, ESLint com as regras do compilador, um `Counter` e `@jotastic/test` configurado.
 
 > [!NOTE]
-> Os pacotes ainda **não foram publicados no npm**. Por enquanto, rode a partir deste monorepo (veja [Desenvolvimento](#-desenvolvimento)).
+> O Jotastic está em **pré-lançamento**: as versões saem na dist-tag `next` (`0.1.0-beta.1`). A API segue a [spec](docs/spec/README.md) e ainda pode mudar até a `0.1.0`.
 
 <details>
 <summary><b>Adicionar a um projeto Vite existente</b></summary>
@@ -279,9 +352,19 @@ O MVP tem **dezoito itens** de API e nenhuma sintaxe nova no JSX.
 
 No **benchmark local** no formato do js-framework-benchmark, comparado com Solid no mesmo Chrome (3 rodadas × 10 execuções, critério: falha se passar de +10% **e** de +2 ms em 2 de 3 rodadas):
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/bench-dark.svg">
+  <img alt="Tempo relativo ao Solid: create 1k 1,11×, replace 1k 1,30× (fora do critério), update 10th 1,14×, select 0,86×, swap 1,07×, remove 1,01×, create 10k 0,99×, append 1k 1,09×, clear 1,22×" src="brand/bench-light.svg" width="100%">
+</picture>
+
+<details>
+<summary>Tabela</summary>
+
 | create 1k | replace 1k | update 10th | select | swap | remove | create 10k | append 1k | clear |
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | 1,11× | **1,30×** ✗ | 1,14× | **0,86×** | 1,07× | 1,01× | **0,99×** | 1,09× | 1,22× |
+
+</details>
 
 *Replace* ainda está em otimização (`npm run bench`). A meta registrada na spec é ficar dentro de Solid + 10%.
 
@@ -299,6 +382,19 @@ No **benchmark local** no formato do js-framework-benchmark, comparado com Solid
 | [`@jotastic/devtools`](packages/devtools) | overlay de flash nos nós atualizados e contadores por flush (`Alt+J`) |
 | [`@jotastic/test`](packages/test) | `render`, `tick` e `counts()`: o teste que prova que só o necessário rodou |
 | [`create-jotastic`](packages/create-jotastic) | `npm create jotastic` |
+
+```bash
+npm i jotastic@next
+npm i -D @jotastic/vite@next @jotastic/eslint-plugin@next @jotastic/test@next
+```
+
+O runtime também sai no jsDelivr e no unpkg, para código **já compilado** (o TSX passa pelo compilador):
+
+```html
+<script type="module">
+  import { mount } from 'https://cdn.jsdelivr.net/npm/jotastic@next/+esm'
+</script>
+```
 
 ```ts
 import { render, tick, counts } from '@jotastic/test'
@@ -336,6 +432,12 @@ npm run build
 npm run dev       # examples/counter
 npm run size      # tamanho brotli por cenário
 npm run bench     # Jotastic vs Solid (Chrome do sistema)
+```
+
+**Release:** uma tag `v*` dispara o workflow [`release.yml`](.github/workflows/release.yml), que roda build, testes e size, aplica a versão da tag aos 8 pacotes ([`scripts/set-version.mjs`](scripts/set-version.mjs)), publica no npm com provenance (tags com `-beta`/`-rc` vão para `next`) e cria a GitHub Release.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
 ```
 
 Monorepo com npm workspaces, TypeScript strict em ESM, tsup, Vitest e happy-dom, e Babel no compilador. A **spec normativa** fica em [`docs/spec`](docs/spec/README.md): os contratos `.d.ts` são a fonte da verdade, e há saídas compiladas de referência e o plano de testes por ID (R, P, D, F, E, S e A).

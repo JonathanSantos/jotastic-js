@@ -12,6 +12,14 @@
 | `logo-light.svg` / `logo-dark.svg` | símbolo + wordmark, para fundo claro / escuro |
 | `banner-light.svg` / `banner-dark.svg` | topo do README e redes sociais (1280×460) |
 | `how-it-works-*.svg` | diagrama "você escreve → compilador → DOM" |
+| `features-*.svg` | grade de features do README |
+| `compare-*.svg` | re-render com VDOM × escrita direta por nó |
+| `pipeline-*.svg` | pipeline do compilador (parse → analyzer → emit → saída; ESLint e Vite) |
+| `reactive-*.svg` | núcleo push-pull (DIRTY / CHECK / CLEAN) |
+| `proxy-*.svg` | proxy profundo e lazy, signals por chave |
+| `lists-*.svg` | reconciliação por chave com LIS e `selector` |
+| `async-*.svg` | linha do tempo de `await`, abort e `<Boundary>` |
+| `bench-*.svg` | benchmark relativo ao Solid (dados em `BENCH`, no `build.py`) |
 | `palette.svg` | paleta |
 | `build.py` | gera todos os SVGs (`python3 brand/build.py`) |
 | `index.html` | prévia de tudo (`python3 -m http.server -d brand`) |

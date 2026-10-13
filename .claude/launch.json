@@ -4,44 +4,119 @@
     {
       "name": "counter",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/counter", "--", "--port", "5173", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/counter",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
       "port": 5173
     },
     {
       "name": "todomvc",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/todomvc", "--", "--port", "5174", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/todomvc",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
       "port": 5174
     },
     {
       "name": "cart",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/cart", "--", "--port", "5175", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/cart",
+        "--",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
       "port": 5175
     },
     {
       "name": "modal",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/modal", "--", "--port", "5176", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/modal",
+        "--",
+        "--port",
+        "5176",
+        "--strictPort"
+      ],
       "port": 5176
     },
     {
       "name": "styling",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/styling", "--", "--port", "5177", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/styling",
+        "--",
+        "--port",
+        "5177",
+        "--strictPort"
+      ],
       "port": 5177
     },
     {
       "name": "slots",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/slots", "--", "--port", "5178", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/slots",
+        "--",
+        "--port",
+        "5178",
+        "--strictPort"
+      ],
       "port": 5178
     },
     {
       "name": "async",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "examples/async", "--", "--port", "5179", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "examples/async",
+        "--",
+        "--port",
+        "5179",
+        "--strictPort"
+      ],
       "port": 5179
+    },
+    {
+      "name": "brand",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5190",
+        "-d",
+        "brand"
+      ],
+      "port": 5190
     }
   ]
 }
