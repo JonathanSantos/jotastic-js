@@ -444,6 +444,47 @@ Monorepo com npm workspaces, TypeScript strict em ESM, tsup, Vitest e happy-dom,
 
 <br>
 
+## ✦ Nota do Claude: como é usar
+
+> Escrita pelo Claude (Anthropic), que ajudou a implementar a biblioteca. Leia com esse viés em mente: é a opinião de quem viu o código por dentro, não um review independente.
+
+**Em uma frase:** o Jotastic tem a menor distância que eu já vi entre "JavaScript que você já sabe escrever" e "UI com atualização granular". A cerimônia some, e o custo disso é que o compilador passa a decidir coisas que em outras libs você escreve à mão.
+
+### O que eu acho mais legal
+
+- **`let` é estado e pronto.** Não há `useState`, `createSignal`, `$state` nem `.value`. Ler é ler e escrever é atribuir. É a primeira lib de signals em que o código de um componente parece um script comum.
+- **Não existe stale closure.** Handlers, `setTimeout` e promessas leem o valor atual, porque a leitura é reescrita para o signal. Some toda uma família de bugs do React sem você precisar entender por quê.
+- **Desestruturar props funciona.** `({ user })` continua reativo porque a leitura é lazy. No Solid esse é o erro clássico de quem chega.
+- **`.map` é a lista.** Não há um `<For>` para lembrar: o compilador transforma o `.map` com `key` em reconciliação por chave com LIS.
+- **`await` no corpo do componente,** com abort automático da requisição anterior e `<Boundary>` para pending e erro. É o async mais curto que conheço em uma lib de UI.
+- **Dá para testar o custo, não só o resultado.** `counts()` afirma quantos efeitos rodaram e quantos nós mudaram. Regressão de performance vira teste vermelho.
+- **O build não é uma caixa-preta.** A saída é JS legível com sourcemap, e o mesmo analyzer roda no ESLint: o que o editor sublinha é o que o build faria.
+
+### Onde é preciso atenção
+
+- **A mágica tem regras.** `let draft = value` copia a prop uma vez (como `useState(props.value)`), e o DOM só atualiza no microtask (`await tick()` antes de medir ou focar). As regras são poucas e estão no [modelo mental](docs/spec/01-modelo-mental.md), mas precisam ser aprendidas. Os diagnósticos do compilador ajudam muito aqui.
+- **É pré-lançamento.** Ainda não há SSR, hidratação nem router: estão no [roadmap](docs/spec/14-roadmap.md). O ecossistema é o que está neste repositório.
+- **A performance é boa, mas ainda não é a de referência.** Fica perto do Solid na maioria dos cenários, mas *replace 1k* está 30% acima, e o counter (3,4 KB) ainda não bateu a meta de 3 KB.
+
+### Comparado com outras libs
+
+| | Atualização | Estado local | Derivado | Arquivo | Componente roda |
+|:--|:--|:--|:--|:--|:--|
+| **React** | re-render + VDOM | `useState` | `useMemo` | `.tsx` | a cada render |
+| **Vue 3** | VDOM (Vapor Mode dispensa) | `ref()` + `.value` | `computed()` | `.vue` ou `.tsx` | `setup` 1×, render a cada mudança |
+| **Svelte 5** | compilador + signals | `$state(0)` | `$derived(…)` | `.svelte` | 1× |
+| **Solid** | signals, sem VDOM | `createSignal` + `count()` | função ou `createMemo` | `.tsx` | 1× |
+| **Jotastic** | compilador + signals, sem VDOM | `let count = 0` | `const double = count * 2` | `.tsx` | 1× |
+
+- **Contra o React:** o mesmo JSX e a mesma composição, sem hooks, regras de hooks, arrays de dependências ou memoização manual. A migração mental é a mais curta da tabela.
+- **Contra o Solid:** o mesmo modelo de execução (componente roda uma vez, bindings por nó), mas sem chamar getters, sem `<For>`/`<Show>` e sem perder reatividade ao desestruturar props. Em troca, o Solid hoje é mais maduro, menor e mais rápido.
+- **Contra o Svelte 5:** a mesma ideia de deixar o compilador gerar a reatividade, mas sem sintaxe própria nem marcadores: é TSX puro, com `tsc` e ESLint padrão. O Svelte é explícito (`$state`) e o Jotastic infere, o que é mais curto e exige confiar na classificação.
+- **Contra o Vue:** sem `.value` e sem SFC. O Vue ganha em ecossistema (router, SSR, devtools) e em documentação.
+
+**Para quem eu recomendaria hoje:** quem vem do React e quer atualização granular sem reaprender a escrever componentes, em SPAs novas ou em widgets isolados. Para apps que dependem de SSR e SEO, eu esperaria a fase 2.
+
+<br>
+
 <div align="center">
 
 <picture>
