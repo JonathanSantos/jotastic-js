@@ -1,0 +1,35 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # GitHub Release
+  id-token: write # provenance do npm
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, registry-url: 'https://registry.npmjs.org' }
+      - run: npm ci
+      - name: Versão da tag
+        id: v
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Pré-release (v0.2.0-beta.1) vai para a dist-tag `next`, nunca para `latest`.
+          if [[ "$V" == *-* ]]; then echo "dist=next" >> "$GITHUB_OUTPUT"; else echo "dist=latest" >> "$GITHUB_OUTPUT"; fi
+      - run: node scripts/set-version.mjs ${{ steps.v.outputs.version }}
+      - run: npm run build
+      - run: npm test
+      - run: npm run size
+      # `-w packages`: só os pacotes publicáveis (exemplos e bench não têm versão).
+      - run: npm publish -w packages --tag ${{ steps.v.outputs.dist }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes ${{ steps.v.outputs.dist == 'next' && '--prerelease' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}

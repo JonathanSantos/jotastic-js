@@ -1,11 +1,26 @@
 {
   "name": "create-jotastic",
   "version": "0.0.0",
+  "keywords": [
+    "jotastic",
+    "tsx",
+    "signals",
+    "compiler",
+    "reactive"
+  ],
+  "homepage": "https://github.com/JonathanSantos/jotastic-js#readme",
+  "bugs": "https://github.com/JonathanSantos/jotastic-js/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JonathanSantos/jotastic-js.git",
+    "directory": "packages/create-jotastic"
+  },
+  "author": "Jonathan Reis dos Santos",
   "description": "Cria um app Jotastic (Vite + TS + ESLint + @jotastic/test).",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "create-jotastic": "./index.js"
+    "create-jotastic": "index.js"
   },
   "files": [
     "index.js",
@@ -16,5 +31,9 @@
   },
   "scripts": {
     "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

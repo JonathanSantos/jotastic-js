@@ -1,6 +1,22 @@
 {
   "name": "jotastic",
   "version": "0.0.0",
+  "description": "Runtime do Jotastic: TSX puro, sem hooks, sem VDOM. Signals e bindings por nó gerados pelo compilador.",
+  "keywords": [
+    "jotastic",
+    "tsx",
+    "signals",
+    "compiler",
+    "reactive"
+  ],
+  "homepage": "https://github.com/JonathanSantos/jotastic-js#readme",
+  "bugs": "https://github.com/JonathanSantos/jotastic-js/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JonathanSantos/jotastic-js.git",
+    "directory": "packages/jotastic"
+  },
+  "author": "Jonathan Reis dos Santos",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -43,5 +59,11 @@
     "test": "vitest run",
     "typecheck": "tsc -p .",
     "typecheck:examples": "tsc -p test/types"
+  },
+  "jsdelivr": "./dist/prod/index.js",
+  "unpkg": "./dist/prod/index.js",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

@@ -1,11 +1,47 @@
 {
   "name": "@jotastic/test",
   "version": "0.0.0",
+  "description": "Utilitários de teste para componentes Jotastic.",
+  "keywords": [
+    "jotastic",
+    "tsx",
+    "signals",
+    "compiler",
+    "reactive"
+  ],
+  "homepage": "https://github.com/JonathanSantos/jotastic-js#readme",
+  "bugs": "https://github.com/JonathanSantos/jotastic-js/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JonathanSantos/jotastic-js.git",
+    "directory": "packages/test"
+  },
+  "author": "Jonathan Reis dos Santos",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "peerDependencies": { "jotastic": "0.0.0" }, "devDependencies": { "jotastic": "0.0.0" },
-  "scripts": { "build": "tsup", "test": "vitest run", "typecheck": "tsc -p ." }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "jotastic": "0.0.0"
+  },
+  "devDependencies": {
+    "jotastic": "0.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

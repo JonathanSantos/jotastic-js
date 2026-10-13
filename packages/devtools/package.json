@@ -1,6 +1,22 @@
 {
   "name": "@jotastic/devtools",
   "version": "0.0.0",
+  "description": "Devtools do Jotastic.",
+  "keywords": [
+    "jotastic",
+    "tsx",
+    "signals",
+    "compiler",
+    "reactive"
+  ],
+  "homepage": "https://github.com/JonathanSantos/jotastic-js#readme",
+  "bugs": "https://github.com/JonathanSantos/jotastic-js/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JonathanSantos/jotastic-js.git",
+    "directory": "packages/devtools"
+  },
+  "author": "Jonathan Reis dos Santos",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -23,5 +39,9 @@
     "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc -p ."
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
